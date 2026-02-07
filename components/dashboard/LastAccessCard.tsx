@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { DoorStatus, Card as CardType } from '@/lib/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { CreditCard, Clock, Globe, Fingerprint } from 'lucide-react';
-import { formatUid } from '@/lib/utils';
+import { formatUid, formatRelativeTime } from '@/lib/utils';
 import { dashboardEvents } from '@/lib/dashboardEvents';
 
 interface LastAccessCardProps {
@@ -23,6 +23,9 @@ function detectAccessSource(lastEvent: string | undefined): AccessSource {
 
 export function LastAccessCard({ status }: LastAccessCardProps) {
   const [cardsMap, setCardsMap] = useState<Record<string, string>>({});
+  const [lastEventTime, setLastEventTime] = useState<string | null>(null);
+  const [, setTick] = useState(0);
+  const prevEventRef = useRef<string | null>(null);
 
   const fetchCardNames = useCallback(async () => {
     try {
@@ -52,6 +55,22 @@ export function LastAccessCard({ status }: LastAccessCardProps) {
     return () => { u1(); u2(); };
   }, [fetchCardNames]);
 
+  // Track when lastEvent changes to record timestamp
+  useEffect(() => {
+    const currentEvent = status?.lastEvent || null;
+    if (currentEvent && currentEvent !== prevEventRef.current && currentEvent !== 'System ready') {
+      setLastEventTime(new Date().toISOString());
+    }
+    prevEventRef.current = currentEvent;
+  }, [status?.lastEvent, status?.lastCard]);
+
+  // Tick every 10s to update relative time display
+  useEffect(() => {
+    if (!lastEventTime) return;
+    const interval = setInterval(() => setTick(t => t + 1), 10000);
+    return () => clearInterval(interval);
+  }, [lastEventTime]);
+
   const getCardDisplayName = (uid: string): { name: string | null; uid: string } => {
     if (!uid) return { name: null, uid: '-' };
     const normalizedUid = uid.replace(/:/g, '').toUpperCase();
@@ -80,15 +99,18 @@ export function LastAccessCard({ status }: LastAccessCardProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <div
             className="w-7 h-7 rounded-lg flex items-center justify-center"
             style={{ background: sourceBg }}
           >
             <SourceIcon className="w-3.5 h-3.5" style={{ color: sourceColor }} />
           </div>
-          Last Access
-        </CardTitle>
+          <div>
+            <CardTitle>Last Access</CardTitle>
+            <CardDescription>Most recent entry event</CardDescription>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {hasAccess ? (
@@ -137,7 +159,7 @@ export function LastAccessCard({ status }: LastAccessCardProps) {
             </div>
             <div className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--text-muted)' }}>
               <Clock className="w-3.5 h-3.5" />
-              <span>Just now</span>
+              <span>{lastEventTime ? formatRelativeTime(lastEventTime) : 'Just now'}</span>
             </div>
             {status?.lastEvent && (
               <div className="pt-3.5" style={{ borderTop: '1px solid var(--border)' }}>

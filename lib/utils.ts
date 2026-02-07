@@ -21,6 +21,31 @@ export function formatTimestamp(timestamp: string): string {
   }
 }
 
+export function formatRelativeTime(timestamp: string): string {
+  try {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+
+    if (diffSec < 10) return 'Just now';
+    if (diffSec < 60) return `${diffSec}s ago`;
+
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d ago`;
+
+    return formatTimestamp(timestamp);
+  } catch {
+    return timestamp;
+  }
+}
+
 export function formatUid(uid: string): string {
   // Format UID to be more readable (e.g., BE:02:28:DB or BE0228DB)
   if (!uid) return '-';

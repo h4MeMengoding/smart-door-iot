@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Hourglass, Save, CreditCard, Trash2 } from 'lucide-react';
 import { Card as CardType, CardDelayConfig } from '@/lib/types';
@@ -120,15 +120,18 @@ export function CardDelayCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <div
             className="w-7 h-7 rounded-lg flex items-center justify-center"
             style={{ background: 'var(--primary-light)' }}
           >
             <Hourglass className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />
           </div>
-          Card Unlock Delay
-        </CardTitle>
+          <div>
+            <CardTitle>Card Unlock Delay</CardTitle>
+            <CardDescription>Response time after scan</CardDescription>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         {!isLoaded ? (
@@ -155,10 +158,6 @@ export function CardDelayCard() {
           </div>
         ) : (
           <div className="space-y-2.5">
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              Set delay before door unlocks per card (0 = instant)
-            </p>
-
             <AnimatePresence mode="popLayout">
               {cards.map((card, index) => {
                 const uid = card.uid;
@@ -175,8 +174,14 @@ export function CardDelayCard() {
                     className="p-3 rounded-xl"
                     style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="min-w-0">
+                    <div className="flex items-center gap-3 mb-2.5">
+                      <div
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                        style={{ background: 'var(--primary-light)' }}
+                      >
+                        <CreditCard className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
                           {card.nickname || 'Unnamed Card'}
                         </p>
@@ -184,22 +189,21 @@ export function CardDelayCard() {
                           {formatUid(uid)}
                         </p>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                        <div
-                          className="px-2 py-0.5 rounded-md text-[11px] font-semibold tabular-nums"
-                          style={{
-                            background: delay > 0
-                              ? 'color-mix(in srgb, var(--warning) 15%, transparent)'
-                              : 'var(--success-light)',
-                            color: delay > 0 ? 'var(--warning)' : 'var(--success-text)',
-                          }}
-                        >
-                          {delay === 0 ? 'Instant' : `${delay}s`}
-                        </div>
+                      <div
+                        className="px-2.5 py-1 rounded-full text-[11px] font-semibold tabular-nums shrink-0"
+                        style={{
+                          background: delay > 0
+                            ? 'color-mix(in srgb, var(--warning) 15%, transparent)'
+                            : 'var(--success-light)',
+                          color: delay > 0 ? 'var(--warning)' : 'var(--success-text)',
+                        }}
+                      >
+                        {delay === 0 ? 'Instant' : `${delay}s`}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
+                      <span className="text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>0s</span>
                       <input
                         type="range"
                         min={0}
@@ -207,8 +211,9 @@ export function CardDelayCard() {
                         value={delay}
                         onChange={(e) => handleDelayChange(uid, parseInt(e.target.value))}
                         className="flex-1"
-                        style={{ accentColor: 'var(--primary)' }}
+                        style={{ accentColor: delay > 0 ? 'var(--warning)' : 'var(--primary)' }}
                       />
+                      <span className="text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>30s</span>
                       <Button
                         onClick={() => handleSave(uid)}
                         isLoading={isSavingThis}
@@ -218,26 +223,11 @@ export function CardDelayCard() {
                       >
                         <Save className="w-3 h-3" />
                       </Button>
-                      {delay > 0 && (
-                        <Button
-                          onClick={() => handleRemoveDelay(uid)}
-                          variant="ghost"
-                          size="sm"
-                          disabled={isSavingThis}
-                          style={{ padding: '4px 8px', fontSize: '11px' }}
-                        >
-                          <Trash2 className="w-3 h-3" style={{ color: 'var(--danger)' }} />
-                        </Button>
-                      )}
                     </div>
                   </motion.div>
                 );
               })}
             </AnimatePresence>
-
-            <p className="text-[10px] text-center pt-1" style={{ color: 'var(--text-muted)' }}>
-              3-tier: Hardcoded 0s → NVS backup → Live config
-            </p>
           </div>
         )}
       </CardContent>

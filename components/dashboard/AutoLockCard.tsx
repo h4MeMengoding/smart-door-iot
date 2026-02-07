@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Timer, Save, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -37,8 +37,8 @@ export function AutoLockCard({ currentDuration }: AutoLockCardProps) {
   }, [loadConfig]);
 
   const handleSave = async () => {
-    if (duration < 1 || duration > 60) {
-      toast.error('Duration must be between 1-60 seconds');
+    if (duration < 1 || duration > 10) {
+      toast.error('Duration must be between 1-10 seconds');
       return;
     }
 
@@ -77,15 +77,18 @@ export function AutoLockCard({ currentDuration }: AutoLockCardProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <div
             className="w-7 h-7 rounded-lg flex items-center justify-center"
             style={{ background: 'color-mix(in srgb, var(--warning) 15%, transparent)' }}
           >
             <Timer className="w-3.5 h-3.5" style={{ color: 'var(--warning)' }} />
           </div>
-          Auto-Lock Timer
-        </CardTitle>
+          <div>
+            <CardTitle>Auto-Lock Timer</CardTitle>
+            <CardDescription>Duration before auto-lock</CardDescription>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
@@ -99,35 +102,23 @@ export function AutoLockCard({ currentDuration }: AutoLockCardProps) {
             </p>
           </div>
 
-          {/* Slider + number input */}
+          {/* Slider */}
           <div>
-            <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min={1}
-                max={60}
-                value={duration}
-                onChange={(e) => setDuration(parseInt(e.target.value))}
-                className="flex-1"
-                style={{ accentColor: 'var(--primary)' }}
-              />
-              <input
-                type="number"
-                min={1}
-                max={60}
-                value={duration}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value);
-                  if (!isNaN(v)) setDuration(Math.max(1, Math.min(60, v)));
-                }}
-                className="w-16 px-2 py-1.5 rounded-lg text-center text-sm font-semibold tabular-nums focus:ring-2 focus:outline-none"
-                style={{ background: 'var(--bg-input)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)' }}
-              />
-            </div>
-            <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-              <span>1s</span>
-              <span>30s</span>
-              <span>60s</span>
+            <input
+              type="range"
+              min={1}
+              max={10}
+              value={duration}
+              onChange={(e) => setDuration(parseInt(e.target.value))}
+              className="w-full"
+              style={{ accentColor: 'var(--primary)' }}
+            />
+            <div className="flex justify-between text-[10px] mt-1 px-0.5" style={{ color: 'var(--text-muted)' }}>
+              {Array.from({ length: 10 }, (_, i) => (
+                <span key={i + 1} className={duration === i + 1 ? 'font-bold' : ''} style={duration === i + 1 ? { color: 'var(--primary)' } : undefined}>
+                  {i + 1}
+                </span>
+              ))}
             </div>
           </div>
 
@@ -157,11 +148,6 @@ export function AutoLockCard({ currentDuration }: AutoLockCardProps) {
             <Save className="w-3.5 h-3.5 mr-1.5" />
             Save & Push to ESP32
           </Button>
-
-          {/* Info */}
-          <p className="text-[10px] text-center" style={{ color: 'var(--text-muted)' }}>
-            3-tier: Hardcoded 5s → NVS backup → Live config
-          </p>
         </div>
       </CardContent>
     </Card>

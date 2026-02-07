@@ -1,7 +1,6 @@
 'use client';
 
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
 import { FileText, Loader2, Maximize2, Fingerprint, Globe, CreditCard, XCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useServerLogs } from '@/hooks/useServerLogs';
@@ -29,10 +28,15 @@ function getLogIcon(log: AccessLog) {
 }
 
 function getActionBadge(action: string, success: boolean) {
-  if (action === 'denied' || !success) {
-    return <Badge variant="danger">Denied</Badge>;
-  } else if (action === 'registered') {
-    return <Badge variant="info">Registered</Badge>;
+  if (action === 'registered') {
+    return (
+      <span
+        className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium"
+        style={{ background: 'var(--info-light)', color: 'var(--info-text)' }}
+      >
+        Registered
+      </span>
+    );
   }
   return null;
 }
@@ -67,11 +71,11 @@ export function LogsSection({ onExpand }: LogsSectionProps) {
               color: 'var(--text-muted)',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'var(--border-strong)';
+              e.currentTarget.style.border = '1px solid var(--border-strong)';
               e.currentTarget.style.color = 'var(--text-primary)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'var(--border)';
+              e.currentTarget.style.border = '1px solid var(--border)';
               e.currentTarget.style.color = 'var(--text-muted)';
             }}
             title="View all logs"

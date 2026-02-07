@@ -27,16 +27,19 @@ import { LogsSection } from '@/components/dashboard/LogsSection';
 import { AddCardSection } from '@/components/dashboard/AddCardSection';
 import { OtaUpdateCard } from '@/components/dashboard/OtaUpdateCard';
 import { RestartCard } from '@/components/dashboard/RestartCard';
+import { DeviceToolsCard } from '@/components/dashboard/DeviceToolsCard';
 import { AutoLockCard } from '@/components/dashboard/AutoLockCard';
 import { CardDelayCard } from '@/components/dashboard/CardDelayCard';
+import { FloatingDoorButton } from '@/components/dashboard/FloatingDoorButton';
 import { CardsModal } from '@/components/modals/CardsModal';
 import { LogsModal } from '@/components/modals/LogsModal';
+import { ArrangeModal } from '@/components/modals/ArrangeModal';
 import { DoorStatus, WebSocketMessage } from '@/lib/types';
 import { api } from '@/lib/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useDashboardLayout } from '@/hooks/useDashboardLayout';
 import { dashboardEvents } from '@/lib/dashboardEvents';
-import { WifiOff, RefreshCw, GripVertical, LayoutDashboard, Check, RotateCcw, CreditCard as CreditCardIcon, FileText } from 'lucide-react';
+import { WifiOff, RefreshCw, GripVertical, LayoutDashboard, Check, RotateCcw, CreditCard as CreditCardIcon, FileText, LayoutList } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -119,6 +122,7 @@ export default function DashboardPage() {
   const [apiError, setApiError] = useState(false);
   const [cardsModalOpen, setCardsModalOpen] = useState(false);
   const [logsModalOpen, setLogsModalOpen] = useState(false);
+  const [arrangeModalOpen, setArrangeModalOpen] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const prevStatusRef = useRef<DoorStatus | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
@@ -453,16 +457,12 @@ export default function DashboardPage() {
         return <DoorControls onAction={fetchStatus} isLocked={!status?.doorUnlocked} />;
       case 'last-access':
         return <LastAccessCard status={status} />;
-      case 'add-card':
-        return <AddCardSection status={status} />;
+      case 'device-tools':
+        return <DeviceToolsCard status={status} />;
       case 'cards':
         return <CardsSection onExpand={() => setCardsModalOpen(true)} />;
       case 'logs':
         return <LogsSection onExpand={() => setLogsModalOpen(true)} />;
-      case 'ota-update':
-        return <OtaUpdateCard />;
-      case 'restart':
-        return <RestartCard />;
       case 'auto-lock':
         return <AutoLockCard currentDuration={status?.autoLockDuration} />;
       case 'card-delay':
@@ -609,6 +609,14 @@ export default function DashboardPage() {
                 Reset
               </Button>
               <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setArrangeModalOpen(true)}
+              >
+                <LayoutList className="w-3.5 h-3.5 mr-1.5" />
+                Arrange
+              </Button>
+              <Button
                 variant="primary"
                 size="sm"
                 onClick={() => {
@@ -656,9 +664,26 @@ export default function DashboardPage() {
         </>)}
       </div>
 
+      {/* Floating Door Control — mobile only */}
+      {!isEspOffline && (
+        <FloatingDoorButton
+          isLocked={!status?.doorUnlocked}
+          onAction={fetchStatus}
+        />
+      )}
+
       {/* Modals */}
       <CardsModal isOpen={cardsModalOpen} onClose={() => setCardsModalOpen(false)} onCardsChanged={() => { dashboardEvents.emit('cards-changed'); syncCards(); }} />
       <LogsModal isOpen={logsModalOpen} onClose={() => setLogsModalOpen(false)} />
+      <ArrangeModal
+        isOpen={arrangeModalOpen}
+        onClose={() => setArrangeModalOpen(false)}
+        layout={layout}
+        onSave={(newLayout) => {
+          saveLayout(newLayout);
+          toast.success('Layout arranged');
+        }}
+      />
     </div>
   );
 }

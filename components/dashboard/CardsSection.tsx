@@ -1,21 +1,26 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
-import { CreditCard, Maximize2, RefreshCw } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { CreditCard, Maximize2, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card as CardType } from '@/lib/types';
-import { formatUid } from '@/lib/utils';
 import { dashboardEvents } from '@/lib/dashboardEvents';
+import { RfidCardVisual } from '@/components/ui/RfidCardVisual';
 
 interface CardsSectionProps {
   onExpand: () => void;
 }
 
+const SLIDE_INTERVAL = 3000;
+
 export function CardsSection({ onExpand }: CardsSectionProps) {
   const [cards, setCards] = useState<CardType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchCards = async () => {
     try {
@@ -33,21 +38,18 @@ export function CardsSection({ onExpand }: CardsSectionProps) {
   useEffect(() => {
     fetchCards();
 
-    // Listen for DB-synced cards refresh
     const unsubscribe = dashboardEvents.on('cards-changed', fetchCards);
 
-    // Listen for instant card updates from ESP (before DB sync)
     const unsubInstant = dashboardEvents.on('cards-instant-update', (espUids: string[]) => {
       if (Array.isArray(espUids)) {
         setCards((prev) => {
-          // Merge: keep existing cards that are still in ESP, add new ones
           const existingMap = new Map(prev.map((c) => [c.uid.replace(/:/g, '').toUpperCase(), c]));
           const merged: CardType[] = [];
           for (const uid of espUids) {
             const normalized = uid.replace(/:/g, '').toUpperCase();
             const existing = existingMap.get(normalized);
             if (existing) {
-              merged.push(existing); // Keep nickname etc.
+              merged.push(existing);
             } else {
               merged.push({ uid, nickname: undefined, addedAt: new Date().toISOString() });
             }
@@ -58,7 +60,6 @@ export function CardsSection({ onExpand }: CardsSectionProps) {
       }
     });
 
-    // Listen for sync status
     const unsubSyncing = dashboardEvents.on('cards-syncing', () => setIsSyncing(true));
     const unsubSynced = dashboardEvents.on('cards-synced', () => setIsSyncing(false));
 
@@ -70,7 +71,40 @@ export function CardsSection({ onExpand }: CardsSectionProps) {
     };
   }, []);
 
-  const displayCards = cards.slice(0, 3);
+  const goToSlide = useCallback((index: number) => {
+    setIsTransitioning(true);
+    setCurrentIndex(index);
+    setTimeout(() => setIsTransitioning(false), 500);
+  }, []);
+
+  const goNext = useCallback(() => {
+    if (cards.length <= 1) return;
+    goToSlide((currentIndex + 1) % cards.length);
+  }, [cards.length, currentIndex, goToSlide]);
+
+  const goPrev = useCallback(() => {
+    if (cards.length <= 1) return;
+    goToSlide((currentIndex - 1 + cards.length) % cards.length);
+  }, [cards.length, currentIndex, goToSlide]);
+
+  // Auto-slide timer
+  useEffect(() => {
+    if (cards.length <= 1 || isPaused) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      return;
+    }
+    timerRef.current = setInterval(goNext, SLIDE_INTERVAL);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [cards.length, isPaused, goNext]);
+
+  // Reset index if cards change
+  useEffect(() => {
+    if (currentIndex >= cards.length) {
+      setCurrentIndex(0);
+    }
+  }, [cards.length, currentIndex]);
 
   return (
     <Card>
@@ -105,11 +139,11 @@ export function CardsSection({ onExpand }: CardsSectionProps) {
               color: 'var(--text-muted)',
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'var(--border-strong)';
+              e.currentTarget.style.border = '1px solid var(--border-strong)';
               e.currentTarget.style.color = 'var(--text-primary)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'var(--border)';
+              e.currentTarget.style.border = '1px solid var(--border)';
               e.currentTarget.style.color = 'var(--text-muted)';
             }}
             title="View all cards"
@@ -144,38 +178,108 @@ export function CardsSection({ onExpand }: CardsSectionProps) {
             </button>
           </div>
         ) : (
-          <div className="space-y-2">
-            {displayCards.map((card, index) => (
-              <motion.div
-                key={card.uid}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: index * 0.05 }}
-                className="flex items-center gap-3 p-3 rounded-xl transition-colors"
-                style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}
-              >
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'var(--primary-light)' }}>
-                  <CreditCard className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+          <div className="flex flex-col items-center gap-3">
+            {/* Carousel container */}
+            <div
+              className="w-full relative group"
+              onMouseEnter={() => setIsPaused(true)}
+              onMouseLeave={() => setIsPaused(false)}
+            >
+              {/* Slide viewport */}
+              <div className="w-full overflow-hidden rounded-xl">
+                <div
+                  className="flex"
+                  style={{
+                    transform: `translateX(-${currentIndex * 100}%)`,
+                    transition: isTransitioning ? 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
+                  }}
+                >
+                  {cards.map((card, i) => (
+                    <div
+                      key={card.uid}
+                      className="w-full shrink-0 flex justify-center px-2"
+                    >
+                      <div style={{ width: 240 }}>
+                        <RfidCardVisual card={card} index={i} size="sm" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                    {card.nickname || 'Unnamed Card'}
-                  </p>
-                  <p className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>
-                    {formatUid(card.uid)}
-                  </p>
-                </div>
-              </motion.div>
-            ))}
-            {cards.length > 3 && (
+              </div>
+
+            </div>
+
+            {/* Dot indicators */}
+            {cards.length > 1 && (
+              <div className="flex items-center gap-1.5">
+                {cards.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => goToSlide(i)}
+                    className="transition-all duration-300 rounded-full"
+                    style={{
+                      width: currentIndex === i ? 16 : 5,
+                      height: 5,
+                      background: currentIndex === i ? 'var(--primary)' : 'var(--border-strong)',
+                      opacity: currentIndex === i ? 1 : 0.5,
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* View all button with nav arrows */}
+            <div className="flex items-center gap-2">
+              {cards.length > 1 && (
+                <button
+                  onClick={goPrev}
+                  className="w-7 h-7 rounded-full flex items-center justify-center transition-all duration-200"
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-secondary)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border-strong)';
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                    e.currentTarget.style.color = 'var(--text-secondary)';
+                  }}
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+              )}
               <button
                 onClick={onExpand}
-                className="w-full text-center py-2 rounded-xl text-xs font-medium transition-colors"
-                style={{ color: 'var(--primary)', background: 'var(--primary-light)' }}
+                className="text-xs font-medium transition-colors"
+                style={{ color: 'var(--primary)' }}
               >
-                +{cards.length - 3} more cards
+                View all {cards.length} cards
               </button>
-            )}
+              {cards.length > 1 && (
+                <button
+                  onClick={goNext}
+                  className="w-7 h-7 rounded-full flex items-center justify-center transition-all duration-200"
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-secondary)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border-strong)';
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                    e.currentTarget.style.color = 'var(--text-secondary)';
+                  }}
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         )}
       </CardContent>

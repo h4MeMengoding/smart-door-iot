@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Activity, Wifi, Clock, Database, Cpu, HardDrive, Thermometer, MemoryStick } from 'lucide-react';
 import { SystemInfo } from '@/lib/types';
 import { api } from '@/lib/api';
@@ -110,15 +110,18 @@ export function SystemInfoCard({ uptimeRaw, isConnected = false }: SystemInfoCar
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <div
             className="w-7 h-7 rounded-lg flex items-center justify-center"
             style={{ background: 'var(--primary-light)' }}
           >
             <Activity className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />
           </div>
-          System Info
-        </CardTitle>
+          <div>
+            <CardTitle>System Info</CardTitle>
+            <CardDescription>Device health & network</CardDescription>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {/* WiFi Signal */}

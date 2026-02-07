@@ -11,11 +11,9 @@ const DEFAULT_LAYOUT = [
   'last-access',
   'auto-lock',
   'card-delay',
-  'add-card',
+  'device-tools',
   'cards',
   'logs',
-  'ota-update',
-  'restart',
 ];
 
 export function useDashboardLayout() {

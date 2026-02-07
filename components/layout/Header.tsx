@@ -54,11 +54,11 @@ export function Header() {
                 color: 'var(--text-muted)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border-strong)';
+                e.currentTarget.style.border = '1px solid var(--border-strong)';
                 e.currentTarget.style.color = 'var(--text-primary)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border)';
+                e.currentTarget.style.border = '1px solid var(--border)';
                 e.currentTarget.style.color = 'var(--text-muted)';
               }}
               title="Settings"
@@ -77,11 +77,11 @@ export function Header() {
                 color: 'var(--text-muted)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--danger) 40%, var(--border))';
+                e.currentTarget.style.border = '1px solid color-mix(in srgb, var(--danger) 40%, var(--border))';
                 e.currentTarget.style.color = 'var(--danger)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border)';
+                e.currentTarget.style.border = '1px solid var(--border)';
                 e.currentTarget.style.color = 'var(--text-muted)';
               }}
               title="Logout"

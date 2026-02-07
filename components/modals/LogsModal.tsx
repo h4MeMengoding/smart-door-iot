@@ -3,8 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
-import { FileText, Download, Trash2, XCircle, Loader2, X, Fingerprint, Globe, CreditCard } from 'lucide-react';
+import { FileText, Download, Trash2, XCircle, Loader2, X, Fingerprint, Globe, CreditCard, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useServerLogs } from '@/hooks/useServerLogs';
 import { formatTimestamp, formatUid } from '@/lib/utils';
@@ -35,6 +34,13 @@ interface LogsModalProps {
 export function LogsModal({ isOpen, onClose }: LogsModalProps) {
   const { logs, loading, error, refreshLogs } = useServerLogs();
   const [filter, setFilter] = useState<'all' | 'unlock' | 'denied'>('all');
+  const LOGS_PER_PAGE = 20;
+  const [visibleCount, setVisibleCount] = useState(LOGS_PER_PAGE);
+
+  // Reset visible count when filter changes
+  useEffect(() => {
+    setVisibleCount(LOGS_PER_PAGE);
+  }, [filter]);
 
   // Close on Escape
   useEffect(() => {
@@ -103,10 +109,15 @@ export function LogsModal({ isOpen, onClose }: LogsModalProps) {
   };
 
   const getActionBadge = (action: string, success: boolean) => {
-    if (action === 'denied' || !success) {
-      return <Badge variant="danger">Denied</Badge>;
-    } else if (action === 'registered') {
-      return <Badge variant="info">Registered</Badge>;
+    if (action === 'registered') {
+      return (
+        <span
+          className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium"
+          style={{ background: 'var(--info-light)', color: 'var(--info-text)' }}
+        >
+          Registered
+        </span>
+      );
     }
     return null;
   };
@@ -248,14 +259,14 @@ export function LogsModal({ isOpen, onClose }: LogsModalProps) {
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {filteredLogs.map((log) => (
-                <div
-                  key={log.id}
-                  className="flex items-center justify-between p-3 rounded-xl transition-colors"
-                  style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}
-                >
-                  <div className="flex items-center gap-3 flex-1">
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {filteredLogs.slice(0, visibleCount).map((log) => (
+                  <div
+                    key={log.id}
+                    className="flex items-center gap-3 p-3 rounded-xl transition-colors"
+                    style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}
+                  >
                     {getLogIcon(log)}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
@@ -273,8 +284,18 @@ export function LogsModal({ isOpen, onClose }: LogsModalProps) {
                       </p>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              {visibleCount < filteredLogs.length && (
+                <button
+                  onClick={() => setVisibleCount(prev => prev + LOGS_PER_PAGE)}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium transition-colors"
+                  style={{ color: 'var(--primary)', background: 'var(--primary-light)' }}
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                  View More ({filteredLogs.length - visibleCount} remaining)
+                </button>
+              )}
             </div>
           )}
         </div>
