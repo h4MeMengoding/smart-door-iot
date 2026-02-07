@@ -134,10 +134,10 @@ export async function GET() {
     );
 
     return NextResponse.json(mapped);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching logs:', error);
     return NextResponse.json(
-      { success: false, message: 'Internal server error' },
+      { success: false, message: 'Internal server error', error: error?.message || String(error) },
       { status: 500 }
     );
   }

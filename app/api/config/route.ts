@@ -19,10 +19,10 @@ export async function GET() {
       autoLockDuration,
       cardDelays: mappedDelays,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching config:', error);
     return NextResponse.json(
-      { success: false, message: 'Internal server error' },
+      { success: false, message: 'Internal server error', error: error?.message || String(error) },
       { status: 500 }
     );
   }
