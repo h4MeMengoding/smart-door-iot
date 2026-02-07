@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { X, Wifi, Volume2, Power, Settings as SettingsIcon, Sun, Moon } from 'lucide-react';
-import { getEsp32Ip, setEsp32Ip } from '@/lib/config';
+import { getEsp32Url, setEsp32Url } from '@/lib/config';
 import { api } from '@/lib/api';
 import { useTheme } from '@/components/providers/ThemeProvider';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -16,14 +16,14 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const [esp32Ip, setEsp32IpState] = useState('10.10.1.5');
+  const [esp32Url, setEsp32UrlState] = useState('https://esp.ilhame.id');
   const [isRestarting, setIsRestarting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const { theme, setTheme } = useTheme();
 
   useEffect(() => {
     if (isOpen) {
-      setEsp32IpState(getEsp32Ip());
+      setEsp32UrlState(getEsp32Url());
     }
   }, [isOpen]);
 
@@ -42,10 +42,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     };
   }, [isOpen, onClose]);
 
-  const handleSaveIp = () => {
-    setEsp32Ip(esp32Ip);
+  const handleSaveUrl = () => {
+    setEsp32Url(esp32Url);
     api.updateBaseUrl();
-    toast.success('ESP32 IP address updated');
+    toast.success('ESP32 URL updated');
   };
 
   const handleRestartEsp = async () => {
@@ -204,26 +204,26 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <Wifi className="w-4 h-4" style={{ color: 'var(--primary)' }} />
                 ESP32 Connection
               </CardTitle>
-              <CardDescription>Configure the ESP32 device IP address</CardDescription>
+              <CardDescription>Configure the ESP32 device URL</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                  IP Address
+                  ESP32 URL
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    value={esp32Ip}
-                    onChange={(e) => setEsp32IpState(e.target.value)}
-                    placeholder="10.10.1.5"
+                    value={esp32Url}
+                    onChange={(e) => setEsp32UrlState(e.target.value)}
+                    placeholder="https://esp.ilhame.id"
                     className="flex-1 px-3 py-2 rounded-xl text-[13px] font-mono focus:ring-2 focus:outline-none transition-colors"
                     style={{ background: 'var(--bg-input)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)' }}
                   />
-                  <Button onClick={handleSaveIp} variant="primary" size="sm">Save</Button>
+                  <Button onClick={handleSaveUrl} variant="primary" size="sm">Save</Button>
                 </div>
                 <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                  Default: 10.10.1.5 (must be on the same network)
+                  Default: https://esp.ilhame.id
                 </p>
               </div>
               <Button onClick={handleTestConnection} variant="secondary" disabled={isTesting} size="sm">
