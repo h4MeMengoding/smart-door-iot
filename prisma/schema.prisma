@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Tabel access_credentials - Menyimpan kredensial akses (RFID cards, dll)
+/// uid nullable karena Web/Touch bukan kartu fisik
+model AccessCredential {
+  id          String   @id @default(uuid())
+  uid         String?  @unique
+  displayName String   @default("Unknown User") @map("display_name")
+  isNamed     Boolean  @default(false) @map("is_named")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("access_credentials")
+}
+
+/// Tabel access_logs - Histori akses pintu (append-only)
+/// uid nullable karena WEB/TOUCH tidak punya kartu
+model AccessLog {
+  id           String   @id @default(uuid())
+  uid          String?
+  accessType   String   @map("access_type") // RFID / WEB / TOUCH
+  accessResult String   @map("access_result") // granted / denied
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("access_logs")
+}
+
+/// Tabel card_delay_configs - Delay per-kartu sebelum pintu unlock
+model CardDelayConfig {
+  id        String   @id @default(uuid())
+  cardUid   String   @unique @map("card_uid")
+  delaySec  Int      @default(0) @map("delay_sec")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("card_delay_configs")
+}
+
+/// Tabel system_configs - Konfigurasi sistem (auto-lock duration, dll)
+model SystemConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_configs")
+}
+
+/// Tabel system_events - Event sistem non-user (opsional)
+model SystemEvent {
+  id          String   @id @default(uuid())
+  eventType   String   @map("event_type")
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("system_events")
+}
