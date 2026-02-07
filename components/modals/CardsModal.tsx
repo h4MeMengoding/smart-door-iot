@@ -121,7 +121,7 @@ export function CardsModal({ isOpen, onClose, onCardsChanged }: CardsModalProps)
 
       const response = await fetch('/api/cards', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_DEFAULT_API_KEY || '' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: newCardUid, nickname: newCardNickname || undefined }),
       });
       const result = await response.json();
@@ -155,7 +155,7 @@ export function CardsModal({ isOpen, onClose, onCardsChanged }: CardsModalProps)
 
       const response = await fetch(`/api/cards`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_DEFAULT_API_KEY || '' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid }),
       });
       const result = await response.json();
@@ -176,7 +176,7 @@ export function CardsModal({ isOpen, onClose, onCardsChanged }: CardsModalProps)
     try {
       const response = await fetch(`/api/cards`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_DEFAULT_API_KEY || '' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid, nickname: editNickname }),
       });
       const result = await response.json();

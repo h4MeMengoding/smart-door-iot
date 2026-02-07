@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCards, addCard, removeCard, updateCardName, validateApiKey } from '@/lib/db';
+import { getCards, addCard, removeCard, updateCardName } from '@/lib/db';
 import { isMasterCardUid } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -29,17 +29,9 @@ export async function GET() {
   }
 }
 
-// POST /api/cards - Add new card
+// POST /api/cards - Add new card (protected by middleware session check)
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = request.headers.get('x-api-key');
-    if (!validateApiKey(apiKey)) {
-      return NextResponse.json(
-        { success: false, message: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     const body = await request.json();
     const { uid, nickname } = body;
 
@@ -72,17 +64,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE /api/cards - Remove card
+// DELETE /api/cards - Remove card (protected by middleware session check)
 export async function DELETE(request: NextRequest) {
   try {
-    const apiKey = request.headers.get('x-api-key');
-    if (!validateApiKey(apiKey)) {
-      return NextResponse.json(
-        { success: false, message: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     const body = await request.json();
     const { uid } = body;
 
@@ -106,17 +90,9 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-// PUT /api/cards - Update card displayName
+// PUT /api/cards - Update card displayName (protected by middleware session check)
 export async function PUT(request: NextRequest) {
   try {
-    const apiKey = request.headers.get('x-api-key');
-    if (!validateApiKey(apiKey)) {
-      return NextResponse.json(
-        { success: false, message: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     const body = await request.json();
     const { uid, nickname, displayName } = body;
 

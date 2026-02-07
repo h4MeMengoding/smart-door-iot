@@ -4,11 +4,37 @@ import { logEvents } from '@/lib/events';
 
 export const dynamic = 'force-dynamic';
 
-// POST /api/logs - Add new access log from ESP32
+// Helper: verify session cookie (for dashboard calls)
+async function hasValidSession(request: NextRequest): Promise<boolean> {
+  const cookie = request.cookies.get('smart-door-session');
+  if (!cookie?.value) return false;
+  const parts = cookie.value.split('.');
+  if (parts.length !== 2) return false;
+  const [token, signature] = parts;
+  const secret = process.env.AUTH_SESSION_SECRET || 'default-secret';
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(token));
+  const expected = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+  if (signature.length !== expected.length) return false;
+  let result = 0;
+  for (let i = 0; i < signature.length; i++) {
+    result |= signature.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+// POST /api/logs - Add new access log (from ESP32 via API key, or dashboard via session)
 export async function POST(request: NextRequest) {
   try {
     const apiKey = request.headers.get('x-api-key');
-    if (!validateApiKey(apiKey)) {
+    const hasApiKey = validateApiKey(apiKey);
+    const hasSession = await hasValidSession(request);
+
+    if (!hasApiKey && !hasSession) {
       return NextResponse.json(
         { success: false, message: 'Unauthorized' },
         { status: 401 }
