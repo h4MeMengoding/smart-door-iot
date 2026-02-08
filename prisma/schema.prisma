@@ -29,6 +29,8 @@ model AccessLog {
   accessResult String   @map("access_result") // granted / denied
   createdAt    DateTime @default(now()) @map("created_at")
 
+  @@index([createdAt(sort: Desc)])
+  @@index([uid])
   @@map("access_logs")
 }
 
@@ -59,5 +61,6 @@ model SystemEvent {
   description String?
   createdAt   DateTime @default(now()) @map("created_at")
 
+  @@index([createdAt(sort: Desc)])
   @@map("system_events")
 }

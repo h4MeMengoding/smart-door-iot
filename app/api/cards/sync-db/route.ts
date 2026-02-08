@@ -43,30 +43,34 @@ export async function POST(request: NextRequest) {
       (c) => c.uid && !espUids.has(c.uid.toUpperCase()) && !isMasterCardUid(c.uid)
     );
 
-    // Perform upserts for new cards
-    for (const uid of toAdd) {
-      await prisma.accessCredential.upsert({
-        where: { uid: uid.toUpperCase() },
-        update: {},
-        create: {
-          uid: uid.toUpperCase(),
-          displayName: 'Unknown User',
-          isNamed: false,
-        },
-      });
+    // Perform upserts for new cards — BATCHED in a single transaction
+    if (toAdd.length > 0) {
+      await prisma.$transaction(
+        toAdd.map((uid) =>
+          prisma.accessCredential.upsert({
+            where: { uid: uid.toUpperCase() },
+            update: {},
+            create: {
+              uid: uid.toUpperCase(),
+              displayName: 'Unknown User',
+              isNamed: false,
+            },
+          })
+        )
+      );
     }
 
-    // Remove cards no longer on ESP (only if not named by user)
-    for (const card of toRemove) {
-      if (!card.isNamed) {
-        // If unnamed, safe to remove
-        await prisma.cardDelayConfig.deleteMany({ where: { cardUid: card.uid! } });
-        await prisma.accessCredential.delete({ where: { uid: card.uid! } }).catch(() => {});
-      } else {
-        // If named, still remove but it's the user's choice via ESP
-        await prisma.cardDelayConfig.deleteMany({ where: { cardUid: card.uid! } });
-        await prisma.accessCredential.delete({ where: { uid: card.uid! } }).catch(() => {});
-      }
+    // Remove cards no longer on ESP — BATCHED
+    if (toRemove.length > 0) {
+      const removeUids = toRemove.map((c) => c.uid!);
+      await prisma.$transaction([
+        prisma.cardDelayConfig.deleteMany({
+          where: { cardUid: { in: removeUids } },
+        }),
+        prisma.accessCredential.deleteMany({
+          where: { uid: { in: removeUids } },
+        }),
+      ]);
     }
 
     return NextResponse.json({

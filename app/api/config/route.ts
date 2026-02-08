@@ -6,10 +6,13 @@ export const dynamic = 'force-dynamic';
 // GET /api/config - Get all system config
 export async function GET() {
   try {
-    const autoLockStr = await getSystemConfig('auto_lock_duration');
-    const autoLockDuration = autoLockStr ? parseInt(autoLockStr) : 5; // default 5s
+    // Parallel fetch — both queries run simultaneously
+    const [autoLockStr, cardDelays] = await Promise.all([
+      getSystemConfig('auto_lock_duration'),
+      getCardDelays(),
+    ]);
 
-    const cardDelays = await getCardDelays();
+    const autoLockDuration = autoLockStr ? parseInt(autoLockStr) : 5;
     const mappedDelays = cardDelays.map((d) => ({
       cardUid: d.cardUid,
       delaySec: d.delaySec,
@@ -61,10 +64,12 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Return updated config
-    const autoLockStr = await getSystemConfig('auto_lock_duration');
-    const currentAutoLock = autoLockStr ? parseInt(autoLockStr) : 5;
-    const currentDelays = await getCardDelays();
+    // Return updated config — parallel fetch
+    const [updatedAutoLockStr, currentDelays] = await Promise.all([
+      getSystemConfig('auto_lock_duration'),
+      getCardDelays(),
+    ]);
+    const currentAutoLock = updatedAutoLockStr ? parseInt(updatedAutoLockStr) : 5;
 
     return NextResponse.json({
       success: true,

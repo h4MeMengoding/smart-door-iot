@@ -5,19 +5,24 @@ import { AccessLog } from '@/lib/types';
 import { dashboardEvents } from '@/lib/dashboardEvents';
 
 /**
- * Hook untuk mengambil access logs secara realtime via SSE.
- * - Fetch initial data sekali saat mount
- * - Subscribe ke SSE stream untuk update realtime (tanpa polling)
- * - Auto-reconnect jika koneksi terputus
+ * Hook untuk mengambil access logs secara realtime via efficient polling.
+ * - Fetch initial data sekali saat mount (full load)
+ * - Poll setiap 3 detik untuk logs baru (incremental via ?since=timestamp)
+ * - Auto-pause saat tab/window tidak visible (hemat invocations)
+ * 
+ * Menggantikan SSE yang 100% error di Vercel Free karena 10s timeout.
+ * Dashboard tetap realtime via WebSocket (ESP32 → browser langsung),
+ * polling ini hanya menjaga log list tetap sinkron dengan database.
  */
 export function useServerLogs() {
   const [logs, setLogs] = useState<AccessLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const latestTimestampRef = useRef<string | null>(null);
+  const isPollingSuspendedRef = useRef(false);
 
-  // Fetch semua logs dari database (hanya sekali saat mount / manual refresh)
+  // Fetch semua logs dari database (full load)
   const fetchLogs = useCallback(async () => {
     try {
       setLoading(true);
@@ -28,8 +33,13 @@ export function useServerLogs() {
         throw new Error('Failed to fetch logs');
       }
 
-      const data = await response.json();
+      const data: AccessLog[] = await response.json();
       setLogs(data);
+
+      // Track the most recent timestamp for incremental polling
+      if (data.length > 0) {
+        latestTimestampRef.current = data[0].timestamp;
+      }
     } catch (err) {
       console.error('Error fetching logs:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch logs');
@@ -38,43 +48,52 @@ export function useServerLogs() {
     }
   }, []);
 
-  // Connect ke SSE stream
-  const connectSSE = useCallback(() => {
-    // Cleanup existing connection
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
+  // Incremental poll — hanya ambil logs baru sejak terakhir diterima
+  const pollNewLogs = useCallback(async () => {
+    if (isPollingSuspendedRef.current) return;
+    if (!latestTimestampRef.current) return;
+
+    try {
+      const since = encodeURIComponent(latestTimestampRef.current);
+      const response = await fetch(`/api/logs?since=${since}`);
+
+      if (!response.ok) return; // Silent fail for polls
+
+      const newLogs: AccessLog[] = await response.json();
+
+      if (newLogs.length > 0) {
+        // Update latest timestamp
+        latestTimestampRef.current = newLogs[0].timestamp;
+        // Prepend new logs (they're already sorted desc by server)
+        setLogs((prev) => [...newLogs, ...prev]);
+      }
+    } catch {
+      // Silent fail for incremental polls — next poll will retry
     }
+  }, []);
 
-    const es = new EventSource('/api/logs/stream');
-    eventSourceRef.current = es;
-
-    es.onmessage = (event) => {
-      try {
-        const newLog: AccessLog = JSON.parse(event.data);
-        // Prepend log baru ke awal array (newest first)
-        setLogs((prev) => [newLog, ...prev]);
-      } catch {
-        // Ignore parse errors (heartbeat comments, etc.)
+  // Visibility-based polling pause/resume
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        isPollingSuspendedRef.current = true;
+      } else {
+        isPollingSuspendedRef.current = false;
+        // Fetch any missed logs when tab becomes visible again
+        pollNewLogs();
       }
     };
 
-    es.onerror = () => {
-      es.close();
-      eventSourceRef.current = null;
-
-      // Auto-reconnect setelah 3 detik
-      reconnectTimeoutRef.current = setTimeout(() => {
-        connectSSE();
-      }, 3000);
-    };
-  }, []);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [pollNewLogs]);
 
   useEffect(() => {
     // 1. Fetch initial data
     fetchLogs();
 
-    // 2. Connect SSE untuk realtime updates
-    connectSSE();
+    // 2. Start incremental polling every 3 seconds
+    pollIntervalRef.current = setInterval(pollNewLogs, 3000);
 
     // 3. Subscribe to card changes to refresh nicknames
     const u1 = dashboardEvents.on('card-renamed', fetchLogs);
@@ -84,13 +103,12 @@ export function useServerLogs() {
       // Cleanup
       u1();
       u2();
-      eventSourceRef.current?.close();
-      eventSourceRef.current = null;
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
       }
     };
-  }, [fetchLogs, connectSSE]);
+  }, [fetchLogs, pollNewLogs]);
 
   const refreshLogs = useCallback(() => {
     fetchLogs();

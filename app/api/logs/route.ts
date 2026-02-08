@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { addAccessLog, getAccessLogs, getCardByUid, validateApiKey } from '@/lib/db';
+import { addAccessLog, getCardByUid, validateApiKey } from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 import { logEvents } from '@/lib/events';
 
 export const dynamic = 'force-dynamic';
@@ -103,35 +104,58 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET /api/logs - Get all access logs
-export async function GET() {
+// GET /api/logs - Get access logs (supports ?since=ISO for incremental polling)
+export async function GET(request: NextRequest) {
   try {
-    const logs = await getAccessLogs();
+    const since = request.nextUrl.searchParams.get('since');
 
-    const mapped = await Promise.all(
-      logs.map(async (log) => {
-        let cardNickname: string | undefined;
+    // Build query — if 'since' provided, only return logs newer than that timestamp
+    const whereClause = since
+      ? { createdAt: { gt: new Date(since) } }
+      : undefined;
 
-        if (log.accessType === 'WEB') {
-          cardNickname = 'Web';
-        } else if (log.accessType === 'TOUCH') {
-          cardNickname = 'Touch Sensor';
-        } else if (log.uid) {
-          const card = await getCardByUid(log.uid);
-          cardNickname = card?.isNamed ? card.displayName : undefined;
-        }
+    const logs = await prisma.accessLog.findMany({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
+      take: since ? 50 : 200, // Smaller batch for incremental polls
+    });
 
-        return {
-          id: log.id,
-          timestamp: log.createdAt.toISOString(),
-          cardUid: log.uid,
-          cardNickname,
-          action: log.accessResult === 'granted' ? 'unlock' : 'denied',
-          success: log.accessResult === 'granted',
-          accessType: log.accessType,
-        };
-      })
-    );
+    // Batch-fetch all card nicknames in ONE query (fix N+1)
+    const rfidUids = [...new Set(
+      logs.filter(l => l.uid && l.accessType === 'RFID').map(l => l.uid!)
+    )];
+
+    const cards = rfidUids.length > 0
+      ? await prisma.accessCredential.findMany({
+          where: { uid: { in: rfidUids } },
+          select: { uid: true, displayName: true, isNamed: true },
+        })
+      : [];
+
+    const cardMap = new Map(cards.map(c => [c.uid!, c]));
+
+    const mapped = logs.map((log) => {
+      let cardNickname: string | undefined;
+
+      if (log.accessType === 'WEB') {
+        cardNickname = 'Web';
+      } else if (log.accessType === 'TOUCH') {
+        cardNickname = 'Touch Sensor';
+      } else if (log.uid) {
+        const card = cardMap.get(log.uid);
+        cardNickname = card?.isNamed ? card.displayName : undefined;
+      }
+
+      return {
+        id: log.id,
+        timestamp: log.createdAt.toISOString(),
+        cardUid: log.uid,
+        cardNickname,
+        action: log.accessResult === 'granted' ? 'unlock' : 'denied',
+        success: log.accessResult === 'granted',
+        accessType: log.accessType,
+      };
+    });
 
     return NextResponse.json(mapped);
   } catch (error) {
