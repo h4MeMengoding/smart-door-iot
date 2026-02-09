@@ -259,7 +259,7 @@ export function CardsModal({ isOpen, onClose, onCardsChanged }: CardsModalProps)
               </div>
               <button
                 onClick={onClose}
-                className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors"
+                className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors"
                 style={{ color: 'var(--text-muted)' }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = 'var(--bg-elevated)';
@@ -359,7 +359,7 @@ export function CardsModal({ isOpen, onClose, onCardsChanged }: CardsModalProps)
                   <p className="text-[13px] font-medium" style={{ color: 'var(--text-muted)' }}>No cards registered yet</p>
                 </div>
               ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {cards.map((card, i) => (
                     <motion.div
                       key={card.uid}
@@ -371,7 +371,7 @@ export function CardsModal({ isOpen, onClose, onCardsChanged }: CardsModalProps)
                       {/* Card with hover overlay */}
                       {editingCard === card.uid ? (
                         /* Inline edit mode - edit name directly on card */
-                        <div className="relative" style={{ width: 260 }}>
+                        <div className="relative w-full max-w-70">
                           <RfidCardVisual card={{ ...card, nickname: editNickname || card.nickname }} index={i} size="sm" />
                           {/* Overlay input positioned at card holder name area */}
                           <div
@@ -419,8 +419,7 @@ export function CardsModal({ isOpen, onClose, onCardsChanged }: CardsModalProps)
                       ) : (
                         /* Normal card with centered icon-only hover actions */
                         <div
-                          className="group/card relative cursor-pointer"
-                          style={{ width: 260 }}
+                          className="group/card relative cursor-pointer w-full max-w-70"
                           onClick={() => handleCardTap(card.uid)}
                         >
                           <RfidCardVisual card={card} index={i} size="sm" />

@@ -210,18 +210,21 @@ export function CardDelayCard() {
                         max={30}
                         value={delay}
                         onChange={(e) => handleDelayChange(uid, parseInt(e.target.value))}
-                        className="flex-1"
+                        className="flex-1 min-w-0"
                         style={{ accentColor: delay > 0 ? 'var(--warning)' : 'var(--primary)' }}
                       />
                       <span className="text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>30s</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
                       <Button
                         onClick={() => handleSave(uid)}
                         isLoading={isSavingThis}
                         variant="primary"
                         size="sm"
-                        style={{ padding: '4px 10px', fontSize: '11px' }}
+                        className="flex-1 text-xs"
                       >
-                        <Save className="w-3 h-3" />
+                        <Save className="w-3 h-3 mr-1" />
+                        Save
                       </Button>
                     </div>
                   </motion.div>

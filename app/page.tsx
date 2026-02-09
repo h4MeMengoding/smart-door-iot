@@ -460,7 +460,7 @@ export default function DashboardPage() {
       case 'device-tools':
         return <DeviceToolsCard status={status} />;
       case 'cards':
-        return <CardsSection onExpand={() => setCardsModalOpen(true)} />;
+        return <CardsSection onExpand={() => setCardsModalOpen(true)} countdown={countdown} isLocked={!status?.doorUnlocked} />;
       case 'logs':
         return <LogsSection onExpand={() => setLogsModalOpen(true)} />;
       case 'auto-lock':

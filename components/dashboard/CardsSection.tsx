@@ -9,11 +9,13 @@ import { RfidCardVisual } from '@/components/ui/RfidCardVisual';
 
 interface CardsSectionProps {
   onExpand: () => void;
+  countdown?: number | null;
+  isLocked?: boolean;
 }
 
 const SLIDE_INTERVAL = 3000;
 
-export function CardsSection({ onExpand }: CardsSectionProps) {
+export function CardsSection({ onExpand, countdown, isLocked = true }: CardsSectionProps) {
   const [cards, setCards] = useState<CardType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -127,7 +129,12 @@ export function CardsSection({ onExpand }: CardsSectionProps) {
                   </div>
                 )}
               </div>
-              <CardDescription>{cards.length} of 15 slots used</CardDescription>
+              <CardDescription>
+                {!isLocked && countdown !== null && countdown !== undefined && countdown > 0
+                  ? <span style={{ color: 'var(--primary)', fontWeight: 600 }}>Auto-lock in {countdown}s</span>
+                  : `${cards.length} of 15 slots used`
+                }
+              </CardDescription>
             </div>
           </div>
           <button

@@ -176,7 +176,7 @@ export function ArrangeModal({ isOpen, onClose, layout, onSave }: ArrangeModalPr
                       <button
                         onClick={() => moveUp(index)}
                         disabled={index === 0}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-150"
+                        className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150"
                         style={{
                           color: index === 0 ? 'var(--border-strong)' : 'var(--text-muted)',
                           cursor: index === 0 ? 'not-allowed' : 'pointer',
@@ -197,7 +197,7 @@ export function ArrangeModal({ isOpen, onClose, layout, onSave }: ArrangeModalPr
                       <button
                         onClick={() => moveDown(index)}
                         disabled={index === items.length - 1}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-150"
+                        className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150"
                         style={{
                           color: index === items.length - 1 ? 'var(--border-strong)' : 'var(--text-muted)',
                           cursor: index === items.length - 1 ? 'not-allowed' : 'pointer',

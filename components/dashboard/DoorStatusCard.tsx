@@ -92,11 +92,7 @@ export function DoorStatusCard({ status, isLoading, apiError, countdown, autoLoc
                 >
                   {isLocked ? 'Locked' : 'Unlocked'}
                 </p>
-                {!isLocked && countdown !== null && countdown !== undefined && countdown > 0 && (
-                  <p className="text-[13px] font-semibold mt-1" style={{ color: 'var(--primary)' }}>
-                    Auto-lock in {countdown}s
-                  </p>
-                )}
+
               </motion.div>
             </AnimatePresence>
           </div>

@@ -174,7 +174,7 @@ export function LogsModal({ isOpen, onClose }: LogsModalProps) {
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors"
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors"
             style={{ color: 'var(--text-muted)' }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'var(--bg-elevated)';

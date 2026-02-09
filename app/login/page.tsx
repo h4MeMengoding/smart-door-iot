@@ -176,7 +176,7 @@ export default function LoginPage() {
   const isLocked = lockoutSeconds > 0;
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative" style={{ margin: '0 calc(-1 * clamp(0.5rem, 2vw, 2rem))' }}>
+    <div className="h-dvh flex items-center justify-center relative overflow-hidden" style={{ margin: '0 calc(-1 * clamp(0.5rem, 2vw, 2rem))' }}>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
