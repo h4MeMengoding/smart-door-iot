@@ -65,6 +65,23 @@ void saveCardDelayToNVS(const String& uidHex, uint16_t seconds) {
     DEBUG_PRINTF("[Config] Card delay saved to NVS: %s = %us\n", key.c_str(), seconds);
 }
 
+void saveCardScheduleToNVS(const String& uidHex, uint8_t startHour, uint8_t endHour, uint8_t delaySec) {
+    String key = "s" + uidHex;
+    key.toUpperCase();
+    if (key.length() > 15) key = key.substring(0, 15);
+    uint8_t data[3] = {startHour, endHour, delaySec};
+    nvs.putBytes(key.c_str(), data, 3);
+    DEBUG_PRINTF("[Config] Card schedule saved to NVS: %s = %02d:00-%02d:00 %us\n", key.c_str(), startHour, endHour, delaySec);
+}
+
+void removeCardScheduleFromNVS(const String& uidHex) {
+    String key = "s" + uidHex;
+    key.toUpperCase();
+    if (key.length() > 15) key = key.substring(0, 15);
+    nvs.remove(key.c_str());
+    DEBUG_PRINTF("[Config] Card schedule removed from NVS: %s\n", key.c_str());
+}
+
 // ============================================
 // HELPER: State to string
 // ============================================
@@ -110,7 +127,7 @@ void setupAPIEndpoints(AsyncWebServer& server) {
         
         unsigned long uptime = (millis() - systemStartTime) / 1000;
         
-        DynamicJsonDocument doc(512);
+        DynamicJsonDocument doc(1024);
         doc["doorUnlocked"] = doorUnlocked;
         doc["doorStatus"] = doorUnlocked ? "UNLOCKED" : "LOCKED";
         doc["state"] = stateStr;
@@ -119,6 +136,9 @@ void setupAPIEndpoints(AsyncWebServer& server) {
         doc["cardCount"] = userCardCount;
         doc["uptime"] = String(uptime) + "s";
         doc["autoLockDuration"] = configuredAutoLockMs / 1000;
+        doc["rfidDisabled"] = rfidDisabled;
+        doc["ntpSynced"] = ntpSynced;
+        doc["currentHour"] = getCurrentHour();
         
         String json;
         serializeJson(doc, json);
@@ -716,6 +736,273 @@ void setupAPIEndpoints(AsyncWebServer& server) {
     );
 
     // ============================================
+    // RFID TOGGLE ENDPOINTS
+    // ============================================
+
+    // POST /api/rfid/toggle - Enable/disable RFID reader
+    server.on("/api/rfid/toggle", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!validateApiKey(request)) {
+            AsyncWebServerResponse *response = request->beginResponse(401, "application/json", 
+                "{\"success\":false,\"message\":\"Unauthorized\"}");
+            addCorsHeaders(response);
+            request->send(response);
+            return;
+        }
+
+        rfidDisabled = !rfidDisabled;
+        nvs.putUChar(NVS_RFID_OFF_KEY, rfidDisabled ? 1 : 0);
+        
+        playBuzzerPattern(PATTERN_RFID_DISABLED);
+
+        DEBUG_PRINTF("[API] RFID %s\n", rfidDisabled ? "DISABLED" : "ENABLED");
+
+        DynamicJsonDocument doc(256);
+        doc["success"] = true;
+        doc["rfidDisabled"] = rfidDisabled;
+        doc["message"] = rfidDisabled ? "RFID disabled" : "RFID enabled";
+
+        String json;
+        serializeJson(doc, json);
+
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+        addCorsHeaders(response);
+        request->send(response);
+
+        lastEvent = rfidDisabled ? "RFID disabled (web)" : "RFID enabled (web)";
+        broadcastDoorStatus();
+    });
+
+    // GET /api/rfid/status - Get RFID enable/disable status
+    server.on("/api/rfid/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!validateApiKey(request)) {
+            AsyncWebServerResponse *response = request->beginResponse(401, "application/json", 
+                "{\"success\":false,\"message\":\"Unauthorized\"}");
+            addCorsHeaders(response);
+            request->send(response);
+            return;
+        }
+
+        DynamicJsonDocument doc(128);
+        doc["rfidDisabled"] = rfidDisabled;
+
+        String json;
+        serializeJson(doc, json);
+
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+        addCorsHeaders(response);
+        request->send(response);
+    });
+
+    // ============================================
+    // SCHEDULED RESTART ENDPOINTS
+    // ============================================
+
+    // GET /api/schedule/restart - Get scheduled restart config
+    server.on("/api/schedule/restart", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!validateApiKey(request)) {
+            AsyncWebServerResponse *response = request->beginResponse(401, "application/json", 
+                "{\"success\":false,\"message\":\"Unauthorized\"}");
+            addCorsHeaders(response);
+            request->send(response);
+            return;
+        }
+
+        DynamicJsonDocument doc(256);
+        doc["mode"] = scheduledRestartMode;
+        doc["hour"] = scheduledRestartHour;
+        doc["interval"] = scheduledRestartInterval;
+
+        String json;
+        serializeJson(doc, json);
+
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+        addCorsHeaders(response);
+        request->send(response);
+    });
+
+    // POST /api/schedule/restart - Set scheduled restart config
+    server.on("/api/schedule/restart", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
+        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            if (!validateApiKey(request)) {
+                AsyncWebServerResponse *response = request->beginResponse(401, "application/json", 
+                    "{\"success\":false,\"message\":\"Unauthorized\"}");
+                addCorsHeaders(response);
+                request->send(response);
+                return;
+            }
+
+            DynamicJsonDocument doc(256);
+            DeserializationError error = deserializeJson(doc, (const char*)data, len);
+
+            if (error || !doc.containsKey("mode")) {
+                AsyncWebServerResponse *response = request->beginResponse(400, "application/json", 
+                    "{\"success\":false,\"message\":\"Missing mode field\"}");
+                addCorsHeaders(response);
+                request->send(response);
+                return;
+            }
+
+            uint8_t mode = doc["mode"].as<uint8_t>();
+            if (mode > 2) mode = 0;
+
+            scheduledRestartMode = mode;
+            nvs.putUChar(NVS_SCHED_MODE_KEY, mode);
+
+            if (mode == 1 && doc.containsKey("hour")) {
+                uint8_t hour = doc["hour"].as<uint8_t>();
+                if (hour > 23) hour = 0;
+                scheduledRestartHour = hour;
+                nvs.putUChar(NVS_SCHED_HOUR_KEY, hour);
+            }
+
+            if (mode == 2 && doc.containsKey("interval")) {
+                uint8_t interval = doc["interval"].as<uint8_t>();
+                if (interval < 1) interval = 1;
+                if (interval > 24) interval = 24;
+                scheduledRestartInterval = interval;
+                nvs.putUChar(NVS_SCHED_INTV_KEY, interval);
+                lastRestartCheckTime = millis();  // Reset timer
+            }
+
+            DEBUG_PRINTF("[Schedule] Restart mode=%d hour=%d interval=%dh\n", 
+                        scheduledRestartMode, scheduledRestartHour, scheduledRestartInterval);
+
+            DynamicJsonDocument responseDoc(256);
+            responseDoc["success"] = true;
+            responseDoc["mode"] = scheduledRestartMode;
+            responseDoc["hour"] = scheduledRestartHour;
+            responseDoc["interval"] = scheduledRestartInterval;
+
+            String json;
+            serializeJson(responseDoc, json);
+
+            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+            addCorsHeaders(response);
+            request->send(response);
+
+            lastEvent = "Scheduled restart updated (web)";
+        }
+    );
+
+    // ============================================
+    // CARD DELAY SCHEDULE ENDPOINTS
+    // ============================================
+
+    // GET /api/config/card-schedule - Read all saved card schedules from NVS
+    server.on("/api/config/card-schedule", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!validateApiKey(request)) {
+            AsyncWebServerResponse *response = request->beginResponse(401, "application/json", 
+                "{\"success\":false,\"message\":\"Unauthorized\"}");
+            addCorsHeaders(response);
+            request->send(response);
+            return;
+        }
+
+        DynamicJsonDocument doc(4096);
+        doc["success"] = true;
+        doc["ntpSynced"] = ntpSynced;
+        doc["currentHour"] = getCurrentHour();
+
+        JsonArray arr = doc.createNestedArray("schedules");
+        for (uint8_t i = 0; i < userCardCount; i++) {
+            String uidStr = uidToString(userCards[i].uid, userCards[i].size);
+            String uidHex = uidStr;
+            uidHex.replace(":", "");
+            String schedKey = "s" + uidHex;
+            schedKey.toUpperCase();
+            if (schedKey.length() > 15) schedKey = schedKey.substring(0, 15);
+
+            uint8_t schedData[3] = {0};
+            size_t schedLen = nvs.getBytesLength(schedKey.c_str());
+            if (schedLen == 3) {
+                nvs.getBytes(schedKey.c_str(), schedData, 3);
+                JsonObject sched = arr.createNestedObject();
+                sched["uid"] = uidStr;
+                sched["startHour"] = schedData[0];
+                sched["endHour"] = schedData[1];
+                sched["delaySec"] = schedData[2];
+            }
+        }
+
+        String json;
+        serializeJson(doc, json);
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+        addCorsHeaders(response);
+        request->send(response);
+    });
+
+    // POST /api/config/card-schedule - Push card delay schedule to ESP32
+    server.on("/api/config/card-schedule", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
+        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            if (!validateApiKey(request)) {
+                AsyncWebServerResponse *response = request->beginResponse(401, "application/json", 
+                    "{\"success\":false,\"message\":\"Unauthorized\"}");
+                addCorsHeaders(response);
+                request->send(response);
+                return;
+            }
+
+            DynamicJsonDocument doc(4096);
+            DeserializationError error = deserializeJson(doc, (const char*)data, len);
+
+            if (error) {
+                AsyncWebServerResponse *response = request->beginResponse(400, "application/json", 
+                    "{\"success\":false,\"message\":\"Invalid JSON\"}");
+                addCorsHeaders(response);
+                request->send(response);
+                return;
+            }
+
+            // Support single schedule: {uid, startHour, endHour, delaySec}
+            // Support remove: {uid, remove: true}
+            if (doc.containsKey("uid")) {
+                String uidStr = doc["uid"].as<String>();
+                uidStr.replace(":", "");
+                uidStr.toUpperCase();
+
+                if (doc.containsKey("remove") && doc["remove"].as<bool>()) {
+                    removeCardScheduleFromNVS(uidStr);
+                } else if (doc.containsKey("startHour") && doc.containsKey("endHour") && doc.containsKey("delaySec")) {
+                    uint8_t startH = doc["startHour"].as<uint8_t>();
+                    uint8_t endH = doc["endHour"].as<uint8_t>();
+                    uint8_t delayS = doc["delaySec"].as<uint8_t>();
+                    if (startH > 23) startH = 0;
+                    if (endH > 23) endH = 0;
+                    if (delayS > 30) delayS = 30;
+                    saveCardScheduleToNVS(uidStr, startH, endH, delayS);
+                }
+            }
+
+            // Support bulk: {schedules: [{uid, startHour, endHour, delaySec}, ...]}
+            if (doc.containsKey("schedules")) {
+                JsonArray schedules = doc["schedules"].as<JsonArray>();
+                for (JsonVariant v : schedules) {
+                    String uid = v["uid"].as<String>();
+                    uid.replace(":", "");
+                    uid.toUpperCase();
+                    
+                    if (v.containsKey("remove") && v["remove"].as<bool>()) {
+                        removeCardScheduleFromNVS(uid);
+                    } else {
+                        uint8_t sH = v["startHour"].as<uint8_t>();
+                        uint8_t eH = v["endHour"].as<uint8_t>();
+                        uint8_t dS = v["delaySec"].as<uint8_t>();
+                        if (sH > 23) sH = 0;
+                        if (eH > 23) eH = 0;
+                        if (dS > 30) dS = 30;
+                        saveCardScheduleToNVS(uid, sH, eH, dS);
+                    }
+                }
+            }
+
+            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", 
+                "{\"success\":true}");
+            addCorsHeaders(response);
+            request->send(response);
+        }
+    );
+
+    // ============================================
     // CLONE MODE ENDPOINTS
     // ============================================
 
@@ -919,6 +1206,7 @@ void broadcastDoorStatus() {
     data["cardCount"] = userCardCount;
     data["uptime"] = String((millis() - systemStartTime) / 1000) + "s";
     data["autoLockDuration"] = configuredAutoLockMs / 1000;
+    data["rfidDisabled"] = rfidDisabled;
     
     String json;
     serializeJson(doc, json);

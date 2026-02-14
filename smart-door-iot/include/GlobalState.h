@@ -98,6 +98,22 @@ extern unsigned long systemStartTime;
 extern bool otaInProgress;
 
 // ============================================
+// RFID DISABLE STATE
+// ============================================
+
+extern bool rfidDisabled;          // true = RFID reader ignores all cards
+
+// ============================================
+// SCHEDULED RESTART STATE
+// ============================================
+
+extern uint8_t scheduledRestartMode;       // 0=off, 1=at_hour, 2=every_hours
+extern uint8_t scheduledRestartHour;       // 0-23 for at_hour mode
+extern uint8_t scheduledRestartInterval;   // 1-24 hours for every_hours mode
+extern unsigned long lastRestartCheckTime; // last millis() when we checked
+extern bool ntpSynced;                     // NTP time sync status
+
+// ============================================
 // CONFIGURABLE PARAMETERS (3-tier redundancy)
 // ============================================
 
@@ -115,5 +131,11 @@ extern byte cloneSourceSize;
 // Clone result tracking (persists briefly after clone exits)
 extern String cloneLastResult;       // "none", "success", "failed"
 extern unsigned long cloneResultTime; // millis() when result was set
+
+// ============================================
+// NTP TIME HELPER
+// ============================================
+
+int getCurrentHour();  // Returns current hour (0-23) or -1 if NTP not synced
 
 #endif // GLOBAL_STATE_H

@@ -16,6 +16,8 @@ void setupAPIEndpoints(AsyncWebServer& server);
 // Config NVS helpers
 void saveAutoLockToNVS(uint16_t seconds);
 void saveCardDelayToNVS(const String& uidHex, uint16_t seconds);
+void saveCardScheduleToNVS(const String& uidHex, uint8_t startHour, uint8_t endHour, uint8_t delaySec);
+void removeCardScheduleFromNVS(const String& uidHex);
 
 // Initialize WebSocket
 void setupWebSocket(AsyncWebServer& server);

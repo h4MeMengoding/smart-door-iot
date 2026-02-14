@@ -26,6 +26,44 @@ static unsigned long getCardDelayMs(byte* uid, byte size) {
         key = key.substring(0, 15);
     }
     
+    // Check time-based schedule first
+    int currentHr = getCurrentHour();
+    if (currentHr >= 0) {
+        // Build schedule NVS key: "s" + UID hex
+        String schedKey = "s";
+        for (byte i = 0; i < size; i++) {
+            if (uid[i] < 0x10) schedKey += "0";
+            schedKey += String(uid[i], HEX);
+        }
+        schedKey.toUpperCase();
+        if (schedKey.length() > 15) schedKey = schedKey.substring(0, 15);
+        
+        // Read schedule: 3 bytes [startHour, endHour, delaySec]
+        uint8_t schedData[3] = {0};
+        size_t schedLen = nvs.getBytesLength(schedKey.c_str());
+        if (schedLen == 3) {
+            nvs.getBytes(schedKey.c_str(), schedData, 3);
+            uint8_t startH = schedData[0];
+            uint8_t endH = schedData[1];
+            uint8_t schedDelay = schedData[2];
+            
+            bool inRange = false;
+            if (startH <= endH) {
+                // Normal range: e.g. 8-17
+                inRange = (currentHr >= startH && currentHr < endH);
+            } else {
+                // Wrapping range: e.g. 22-8 means 22,23,0,1,...,7
+                inRange = (currentHr >= startH || currentHr < endH);
+            }
+            
+            if (inRange) {
+                DEBUG_PRINTF("[AUTH] Schedule active (%02d:00-%02d:00): %us delay\n", startH, endH, schedDelay);
+                return (unsigned long)schedDelay * 1000;
+            }
+        }
+    }
+    
+    // Fall back to static delay
     uint16_t delaySec = nvs.getUShort(key.c_str(), 0);
     return (unsigned long)delaySec * 1000;
 }
@@ -48,6 +86,11 @@ void handleStateIdle() {
         if (wifiConnected) {
             broadcastDoorStatus();
         }
+        return;
+    }
+    
+    // Skip RFID check if disabled
+    if (rfidDisabled) {
         return;
     }
     
@@ -131,6 +174,7 @@ void handleStateAuthCheck() {
     playBuzzerPattern(PATTERN_INVALID_CARD);
     rfidLedFail();  // RFID LED: fast blink 2 seconds
     currentState = STATE_IDLE;
+    lastScanTime = 0;  // Reset cooldown so next tap is always accepted
     lastEvent = "Invalid card: " + lastCardUID;
     
     // Broadcast to WebSocket clients
@@ -147,6 +191,7 @@ void handleStateUnlock() {
         rfidLedOff();  // Turn off RFID LED when door locks
         lockDoor();
         currentState = STATE_IDLE;
+        lastScanTime = 0;  // Reset cooldown so next card tap is fresh
         
         // Broadcast to WebSocket so web dashboard syncs
         if (wifiConnected) {
@@ -182,6 +227,7 @@ void handleStateRegistrationMode() {
         DEBUG_PRINTLN("[STATE] Registration mode timeout -> IDLE");
         playBuzzerPattern(PATTERN_TIMEOUT_EXIT);
         currentState = STATE_IDLE;
+        lastScanTime = 0;  // Reset cooldown
         lastEvent = "Registration mode timeout";
         if (wifiConnected) {
             broadcastRegistrationMode(false);
@@ -195,6 +241,7 @@ void handleStateRegistrationMode() {
         DEBUG_PRINTLN("[STATE] Touch sensor pressed, exiting registration mode -> IDLE");
         playBuzzerPattern(PATTERN_EXIT_REG_MODE);
         currentState = STATE_IDLE;
+        lastScanTime = 0;  // Reset cooldown
         lastEvent = "Registration mode exited (touch)";
         if (wifiConnected) {
             broadcastRegistrationMode(false);
@@ -217,6 +264,7 @@ void handleStateRegistrationMode() {
                 DEBUG_PRINTLN("[REG] Master card tapped, exiting registration mode -> IDLE");
                 playBuzzerPattern(PATTERN_EXIT_REG_MODE);
                 currentState = STATE_IDLE;
+                lastScanTime = 0;  // Reset cooldown
                 lastEvent = "Registration mode exited (master card)";
                 if (wifiConnected) {
                     broadcastRegistrationMode(false);
@@ -271,6 +319,7 @@ void handleStateCloneMode() {
         DEBUG_PRINTLN("[CLONE] Timeout -> IDLE");
         playBuzzerPattern(PATTERN_TIMEOUT_EXIT);
         currentState = STATE_IDLE;
+        lastScanTime = 0;  // Reset cooldown
         lastEvent = "Clone mode timeout";
         broadcastCloneStatus("TIMEOUT", "", "timeout");
         broadcastDoorStatus();

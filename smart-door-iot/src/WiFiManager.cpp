@@ -40,6 +40,19 @@ void setupWiFi() {
         wifiConnected = true;
         DEBUG_PRINTLN("\n[WiFi] Connected!");
         DEBUG_PRINTF("[WiFi] IP Address: %s\n", WiFi.localIP().toString().c_str());
+        
+        // Sync NTP time
+        configTime(NTP_GMT_OFFSET, NTP_DAYLIGHT_OFFSET, NTP_SERVER_1, NTP_SERVER_2);
+        DEBUG_PRINTLN("[NTP] Time sync initiated (GMT+7 WIB)");
+        
+        // Wait briefly for NTP sync
+        struct tm timeInfo;
+        if (getLocalTime(&timeInfo, 3000)) {
+            ntpSynced = true;
+            DEBUG_PRINTF("[NTP] Time synced: %02d:%02d:%02d\n", timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
+        } else {
+            DEBUG_PRINTLN("[NTP] Initial sync pending (will retry in background)");
+        }
     } else {
         DEBUG_PRINTLN("\n[WiFi] Connection timeout - continuing offline");
         wifiConnected = false;

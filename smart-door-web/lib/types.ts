@@ -7,6 +7,7 @@ export interface DoorStatus {
   cardCount: number;
   uptime: string;
   autoLockDuration?: number; // seconds, from ESP32 config
+  rfidDisabled?: boolean;    // RFID reader disabled flag
 }
 
 export interface SystemInfo {
@@ -50,6 +51,19 @@ export interface AccessLog {
 export interface CardDelayConfig {
   cardUid: string;
   delaySec: number;
+}
+
+export interface CardDelayScheduleConfig {
+  cardUid: string;
+  startHour: number;
+  endHour: number;
+  delaySec: number;
+}
+
+export interface ScheduledRestartConfig {
+  mode: number;      // 0=off, 1=at_hour, 2=every_hours
+  hour: number;      // 0-23 for at_hour mode
+  interval: number;  // 1-24 for every_hours mode
 }
 
 export interface DoorConfig {

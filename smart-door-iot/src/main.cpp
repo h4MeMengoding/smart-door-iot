@@ -85,6 +85,21 @@ void setup() {
             configuredAutoLockMs = DEFAULT_UNLOCK_DURATION;
             DEBUG_PRINTF("[INIT] Auto-lock from default: %ums\n", DEFAULT_UNLOCK_DURATION);
         }
+        
+        // Load RFID disabled state
+        rfidDisabled = nvs.getUChar(NVS_RFID_OFF_KEY, 0) == 1;
+        if (rfidDisabled) {
+            DEBUG_PRINTLN("[INIT] RFID is DISABLED (from NVS)");
+        }
+        
+        // Load scheduled restart config
+        scheduledRestartMode = nvs.getUChar(NVS_SCHED_MODE_KEY, 0);
+        scheduledRestartHour = nvs.getUChar(NVS_SCHED_HOUR_KEY, 0);
+        scheduledRestartInterval = nvs.getUChar(NVS_SCHED_INTV_KEY, 0);
+        if (scheduledRestartMode > 0) {
+            DEBUG_PRINTF("[INIT] Scheduled restart: mode=%d hour=%d interval=%dh\n",
+                        scheduledRestartMode, scheduledRestartHour, scheduledRestartInterval);
+        }
     }
     
     // Initialize RFID
@@ -160,6 +175,41 @@ void loop() {
             lastActivityTime = millis();
             lastScanTime = 0;
             lastEvent = "Clone mode activated";
+        }
+    }
+
+    // Scheduled restart check (every 60 seconds)
+    if (scheduledRestartMode > 0 && wifiConnected && currentState == STATE_IDLE) {
+        unsigned long now = millis();
+        if (now - lastRestartCheckTime >= 60000) {
+            lastRestartCheckTime = now;
+            
+            if (scheduledRestartMode == 1) {
+                // Mode 1: Restart at specific hour
+                int currentHr = getCurrentHour();
+                if (currentHr >= 0 && currentHr == scheduledRestartHour) {
+                    // Only restart once per hour (check uptime > 120s to avoid restart loop)
+                    unsigned long uptimeSec = (now - systemStartTime) / 1000;
+                    if (uptimeSec > 120) {
+                        DEBUG_PRINTF("[Schedule] Restarting at hour %d\n", currentHr);
+                        lastEvent = "Scheduled restart (at hour)";
+                        lockDoor();
+                        delay(1000);
+                        ESP.restart();
+                    }
+                }
+            } else if (scheduledRestartMode == 2) {
+                // Mode 2: Restart every N hours
+                unsigned long uptimeSec = (now - systemStartTime) / 1000;
+                unsigned long intervalSec = (unsigned long)scheduledRestartInterval * 3600;
+                if (uptimeSec >= intervalSec) {
+                    DEBUG_PRINTF("[Schedule] Restarting after %d hours\n", scheduledRestartInterval);
+                    lastEvent = "Scheduled restart (interval)";
+                    lockDoor();
+                    delay(1000);
+                    ESP.restart();
+                }
+            }
         }
     }
 

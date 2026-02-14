@@ -114,6 +114,61 @@ export async function deleteCardDelay(cardUid: string) {
   return prisma.cardDelayConfig.deleteMany({ where: { cardUid } });
 }
 
+// ─── Card Delay Schedules (time-based) ────────────────────────
+
+export async function getCardDelaySchedules(cardUid?: string) {
+  if (cardUid) {
+    return prisma.cardDelaySchedule.findMany({
+      where: { cardUid },
+      orderBy: { startHour: 'asc' },
+    });
+  }
+  return prisma.cardDelaySchedule.findMany({
+    orderBy: [{ cardUid: 'asc' }, { startHour: 'asc' }],
+  });
+}
+
+export async function upsertCardDelaySchedule(
+  cardUid: string,
+  startHour: number,
+  endHour: number,
+  delaySec: number
+) {
+  return prisma.cardDelaySchedule.upsert({
+    where: {
+      cardUid_startHour_endHour: { cardUid, startHour, endHour },
+    },
+    update: { delaySec },
+    create: { cardUid, startHour, endHour, delaySec },
+  });
+}
+
+export async function deleteCardDelaySchedule(cardUid: string, startHour: number, endHour: number) {
+  return prisma.cardDelaySchedule.deleteMany({
+    where: { cardUid, startHour, endHour },
+  });
+}
+
+export async function deleteAllCardDelaySchedules(cardUid: string) {
+  return prisma.cardDelaySchedule.deleteMany({ where: { cardUid } });
+}
+
+export async function bulkUpsertCardDelaySchedule(
+  cardUids: string[],
+  startHour: number,
+  endHour: number,
+  delaySec: number
+) {
+  const ops = cardUids.map((uid) =>
+    prisma.cardDelaySchedule.upsert({
+      where: { cardUid_startHour_endHour: { cardUid: uid, startHour, endHour } },
+      update: { delaySec },
+      create: { cardUid: uid, startHour, endHour, delaySec },
+    })
+  );
+  return prisma.$transaction(ops);
+}
+
 // ─── System Config ────────────────────────────────────────────
 
 export async function getSystemConfig(key: string): Promise<string | null> {

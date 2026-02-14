@@ -53,6 +53,11 @@ const byte MASTER_CARDS[MAX_MASTER_CARDS][8] = {
 // Config NVS keys
 #define NVS_AUTOLOCK_KEY    "autolock_dur"  // auto-lock duration in seconds (uint16)
 // Card delay NVS: "d" + UID hex, e.g. "dBE0228DB" (max 15 chars)
+// Card schedule NVS: "s" + UID hex, e.g. "sBE0228DB" (3 bytes: startH, endH, delaySec)
+#define NVS_RFID_OFF_KEY    "rfid_off"     // RFID disabled flag (uint8: 0=enabled, 1=disabled)
+#define NVS_SCHED_MODE_KEY  "sched_mode"   // Scheduled restart mode (0=off, 1=at_hour, 2=every_hours)
+#define NVS_SCHED_HOUR_KEY  "sched_hour"   // Scheduled restart hour (0-23)
+#define NVS_SCHED_INTV_KEY  "sched_intv"   // Scheduled restart interval in hours (1-24)
 
 #define MAX_USER_CARDS      15   // Maximum 15 user cards
 #define UID_MAX_SIZE        7    // Maximum UID size (4 or 7 bytes)
@@ -87,6 +92,15 @@ const byte MASTER_CARDS[MAX_MASTER_CARDS][8] = {
 #define WEB_SERVER_PORT      80
 
 // ============================================
+// 🕐 NTP CONFIGURATION
+// ============================================
+
+#define NTP_SERVER_1        "pool.ntp.org"
+#define NTP_SERVER_2        "time.nist.gov"
+#define NTP_GMT_OFFSET      25200       // GMT+7 (WIB) in seconds (7 * 3600)
+#define NTP_DAYLIGHT_OFFSET 0           // No daylight saving
+
+// ============================================
 //  OTA CONFIGURATION
 // ============================================
 
@@ -119,6 +133,7 @@ enum BuzzerPattern {
     PATTERN_TOUCH_EXIT,         // Touch sensor: 1 short beep
     PATTERN_EXIT_REG_MODE,      // Manual exit registration: 2 beeps
     PATTERN_DELAY_CARD,         // Delayed card: 1 long beep (2 seconds)
+    PATTERN_RFID_DISABLED,      // RFID disabled/enabled: 5 rapid beeps
     PATTERN_NONE                // No pattern playing
 };
 
@@ -163,7 +178,10 @@ const BuzzerPatternData BUZZER_PATTERNS[] = {
     {2, {100, 100, 0, 0, 0}, {0, 150, 0, 0, 0}},
     
     // PATTERN_DELAY_CARD: 1 long beep (2 seconds) for delayed unlock
-    {1, {2000, 0, 0, 0, 0}, {0, 0, 0, 0, 0}}
+    {1, {2000, 0, 0, 0, 0}, {0, 0, 0, 0, 0}},
+    
+    // PATTERN_RFID_DISABLED: 5 rapid short beeps
+    {5, {60, 60, 60, 60, 60}, {0, 60, 60, 60, 60}}
 };
 
 // ============================================

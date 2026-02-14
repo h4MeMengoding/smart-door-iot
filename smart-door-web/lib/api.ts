@@ -1,4 +1,4 @@
-import { DoorStatus, Card, SystemInfo, Settings, DoorConfig, CloneStatus } from './types';
+import { DoorStatus, Card, SystemInfo, Settings, DoorConfig, CloneStatus, ScheduledRestartConfig } from './types';
 import { getApiBaseUrl, getApiKey } from './config';
 
 class ApiClient {
@@ -149,6 +149,53 @@ class ApiClient {
 
   async getCloneStatus(): Promise<CloneStatus> {
     return this.request<CloneStatus>('/api/clone/status');
+  }
+
+  // RFID Toggle
+  async toggleRfid(): Promise<{ success: boolean; rfidDisabled: boolean; message: string }> {
+    return this.request('/api/rfid/toggle', { method: 'POST' });
+  }
+
+  async getRfidStatus(): Promise<{ rfidDisabled: boolean }> {
+    return this.request('/api/rfid/status');
+  }
+
+  // Scheduled Restart
+  async getScheduledRestart(): Promise<ScheduledRestartConfig> {
+    return this.request<ScheduledRestartConfig>('/api/schedule/restart');
+  }
+
+  async setScheduledRestart(config: ScheduledRestartConfig): Promise<{ success: boolean } & ScheduledRestartConfig> {
+    return this.request('/api/schedule/restart', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  }
+
+  // Card Delay Schedule (time-based) — push to ESP32
+  async getEspSchedules(): Promise<{ success: boolean; ntpSynced: boolean; currentHour: number; schedules: { uid: string; startHour: number; endHour: number; delaySec: number }[] }> {
+    return this.request('/api/config/card-schedule');
+  }
+
+  async pushCardSchedule(uid: string, startHour: number, endHour: number, delaySec: number): Promise<{ success: boolean }> {
+    return this.request('/api/config/card-schedule', {
+      method: 'POST',
+      body: JSON.stringify({ uid, startHour, endHour, delaySec }),
+    });
+  }
+
+  async removeCardSchedule(uid: string): Promise<{ success: boolean }> {
+    return this.request('/api/config/card-schedule', {
+      method: 'POST',
+      body: JSON.stringify({ uid, remove: true }),
+    });
+  }
+
+  async pushBulkCardSchedules(schedules: { uid: string; startHour: number; endHour: number; delaySec: number; remove?: boolean }[]): Promise<{ success: boolean }> {
+    return this.request('/api/config/card-schedule', {
+      method: 'POST',
+      body: JSON.stringify({ schedules }),
+    });
   }
 }
 

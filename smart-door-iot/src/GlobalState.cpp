@@ -88,3 +88,36 @@ byte cloneSourceSize = 0;
 // Clone result tracking
 String cloneLastResult = "none";
 unsigned long cloneResultTime = 0;
+
+// ============================================
+// RFID DISABLE STATE
+// ============================================
+
+bool rfidDisabled = false;
+
+// ============================================
+// SCHEDULED RESTART STATE
+// ============================================
+
+uint8_t scheduledRestartMode = 0;       // 0=off
+uint8_t scheduledRestartHour = 0;
+uint8_t scheduledRestartInterval = 0;
+unsigned long lastRestartCheckTime = 0;
+bool ntpSynced = false;
+
+// ============================================
+// NTP TIME HELPER
+// ============================================
+
+int getCurrentHour() {
+    struct tm timeInfo;
+    if (!getLocalTime(&timeInfo, 100)) {
+        return -1;
+    }
+    // Update ntpSynced flag once time is actually available
+    if (!ntpSynced) {
+        ntpSynced = true;
+        DEBUG_PRINTF("[NTP] Time synced (deferred): %02d:%02d:%02d\n", timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
+    }
+    return timeInfo.tm_hour;
+}

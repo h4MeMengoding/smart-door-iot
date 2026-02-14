@@ -293,7 +293,6 @@ Masih banyak ruang untuk pengembangan fitur tambahan.
 - [ ] PIN code backup (keypad)
 - [ ] Telegram bot notification
 - [ ] Multiple door support
-- [ ] Battery backup indicator
 
 ---
 

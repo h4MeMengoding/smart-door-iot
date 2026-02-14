@@ -44,6 +44,19 @@ model CardDelayConfig {
   @@map("card_delay_configs")
 }
 
+/// Tabel card_delay_schedules - Time-based delay per-kartu
+model CardDelaySchedule {
+  id        String   @id @default(uuid())
+  cardUid   String   @map("card_uid")
+  startHour Int      @map("start_hour")
+  endHour   Int      @map("end_hour")
+  delaySec  Int      @map("delay_sec")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([cardUid, startHour, endHour])
+  @@map("card_delay_schedules")
+}
+
 /// Tabel system_configs - Konfigurasi sistem (auto-lock duration, dll)
 model SystemConfig {
   id        String   @id @default(uuid())

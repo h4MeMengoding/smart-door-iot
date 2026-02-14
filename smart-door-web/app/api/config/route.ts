@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSystemConfig, setSystemConfig, getCardDelays, upsertCardDelay, deleteCardDelay, validateApiKey } from '@/lib/db';
+import { getSystemConfig, setSystemConfig, getCardDelays, upsertCardDelay, deleteCardDelay, getCardDelaySchedules, upsertCardDelaySchedule, deleteCardDelaySchedule, deleteAllCardDelaySchedules, bulkUpsertCardDelaySchedule, validateApiKey } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 // GET /api/config - Get all system config
 export async function GET() {
   try {
-    // Parallel fetch — both queries run simultaneously
-    const [autoLockStr, cardDelays] = await Promise.all([
+    // Parallel fetch — all queries run simultaneously
+    const [autoLockStr, cardDelays, cardSchedules] = await Promise.all([
       getSystemConfig('auto_lock_duration'),
       getCardDelays(),
+      getCardDelaySchedules(),
     ]);
 
     const autoLockDuration = autoLockStr ? parseInt(autoLockStr) : 5;
@@ -17,10 +18,17 @@ export async function GET() {
       cardUid: d.cardUid,
       delaySec: d.delaySec,
     }));
+    const mappedSchedules = cardSchedules.map((s) => ({
+      cardUid: s.cardUid,
+      startHour: s.startHour,
+      endHour: s.endHour,
+      delaySec: s.delaySec,
+    }));
 
     return NextResponse.json({
       autoLockDuration,
       cardDelays: mappedDelays,
+      cardSchedules: mappedSchedules,
     });
   } catch (error) {
     console.error('Error fetching config:', error);
@@ -43,7 +51,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { autoLockDuration, cardDelay } = body;
+    const { autoLockDuration, cardDelay, cardSchedule, bulkSchedule, removeSchedule } = body;
 
     // Update auto-lock duration
     if (autoLockDuration !== undefined) {
@@ -64,10 +72,37 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // Add/update card delay schedule
+    if (cardSchedule) {
+      const { cardUid, startHour, endHour, delaySec } = cardSchedule;
+      if (cardUid !== undefined && startHour !== undefined && endHour !== undefined && delaySec !== undefined) {
+        await upsertCardDelaySchedule(cardUid, startHour, endHour, delaySec);
+      }
+    }
+
+    // Bulk schedule (apply same schedule to multiple cards)
+    if (bulkSchedule) {
+      const { cardUids, startHour, endHour, delaySec } = bulkSchedule;
+      if (cardUids?.length && startHour !== undefined && endHour !== undefined && delaySec !== undefined) {
+        await bulkUpsertCardDelaySchedule(cardUids, startHour, endHour, delaySec);
+      }
+    }
+
+    // Remove schedule for a card
+    if (removeSchedule) {
+      const { cardUid, startHour, endHour, all } = removeSchedule;
+      if (all && cardUid) {
+        await deleteAllCardDelaySchedules(cardUid);
+      } else if (cardUid && startHour !== undefined && endHour !== undefined) {
+        await deleteCardDelaySchedule(cardUid, startHour, endHour);
+      }
+    }
+
     // Return updated config — parallel fetch
-    const [updatedAutoLockStr, currentDelays] = await Promise.all([
+    const [updatedAutoLockStr, currentDelays, currentSchedules] = await Promise.all([
       getSystemConfig('auto_lock_duration'),
       getCardDelays(),
+      getCardDelaySchedules(),
     ]);
     const currentAutoLock = updatedAutoLockStr ? parseInt(updatedAutoLockStr) : 5;
 
@@ -77,6 +112,12 @@ export async function PUT(request: NextRequest) {
       cardDelays: currentDelays.map((d) => ({
         cardUid: d.cardUid,
         delaySec: d.delaySec,
+      })),
+      cardSchedules: currentSchedules.map((s) => ({
+        cardUid: s.cardUid,
+        startHour: s.startHour,
+        endHour: s.endHour,
+        delaySec: s.delaySec,
       })),
     });
   } catch (error) {
