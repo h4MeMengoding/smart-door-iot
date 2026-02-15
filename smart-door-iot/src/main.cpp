@@ -178,6 +178,22 @@ void loop() {
         }
     }
 
+    // Periodic NTP re-check (every 30 min) — ensures time stays accurate
+    if (wifiConnected) {
+        static unsigned long lastNtpCheck = 0;
+        unsigned long now = millis();
+        if (now - lastNtpCheck >= NTP_RESYNC_INTERVAL) {
+            lastNtpCheck = now;
+            int hr = getCurrentHour();
+            if (hr < 0) {
+                DEBUG_PRINTLN("[NTP] Re-sync: time not available, re-initializing...");
+                configTime(NTP_GMT_OFFSET, NTP_DAYLIGHT_OFFSET, NTP_SERVER_1, NTP_SERVER_2);
+            } else {
+                DEBUG_PRINTF("[NTP] Re-sync check OK: %02d:xx\n", hr);
+            }
+        }
+    }
+
     // Scheduled restart check (every 60 seconds)
     if (scheduledRestartMode > 0 && wifiConnected && currentState == STATE_IDLE) {
         unsigned long now = millis();
@@ -188,14 +204,22 @@ void loop() {
                 // Mode 1: Restart at specific hour
                 int currentHr = getCurrentHour();
                 if (currentHr >= 0 && currentHr == scheduledRestartHour) {
-                    // Only restart once per hour (check uptime > 120s to avoid restart loop)
-                    unsigned long uptimeSec = (now - systemStartTime) / 1000;
-                    if (uptimeSec > 120) {
-                        DEBUG_PRINTF("[Schedule] Restarting at hour %d\n", currentHr);
-                        lastEvent = "Scheduled restart (at hour)";
-                        lockDoor();
-                        delay(1000);
-                        ESP.restart();
+                    // Prevent restart loop: store last restart day+hour in NVS
+                    struct tm timeInfo;
+                    if (getLocalTime(&timeInfo, 100)) {
+                        uint16_t today = (uint16_t)(timeInfo.tm_year * 366 + timeInfo.tm_yday);
+                        uint16_t lastRstDay = nvs.getUShort("rstDay", 0);
+                        uint8_t lastRstHr = nvs.getUChar("rstHr", 255);
+                        
+                        if (today != lastRstDay || (uint8_t)currentHr != lastRstHr) {
+                            nvs.putUShort("rstDay", today);
+                            nvs.putUChar("rstHr", (uint8_t)currentHr);
+                            DEBUG_PRINTF("[Schedule] Restarting at hour %d (day=%d)\n", currentHr, today);
+                            lastEvent = "Scheduled restart (at hour)";
+                            lockDoor();
+                            delay(1000);
+                            ESP.restart();
+                        }
                     }
                 }
             } else if (scheduledRestartMode == 2) {

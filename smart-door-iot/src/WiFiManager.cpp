@@ -41,17 +41,18 @@ void setupWiFi() {
         DEBUG_PRINTLN("\n[WiFi] Connected!");
         DEBUG_PRINTF("[WiFi] IP Address: %s\n", WiFi.localIP().toString().c_str());
         
-        // Sync NTP time
+        // Sync NTP time — use Indonesian pool first for faster sync
         configTime(NTP_GMT_OFFSET, NTP_DAYLIGHT_OFFSET, NTP_SERVER_1, NTP_SERVER_2);
         DEBUG_PRINTLN("[NTP] Time sync initiated (GMT+7 WIB)");
+        DEBUG_PRINTF("[NTP] Servers: %s, %s\n", NTP_SERVER_1, NTP_SERVER_2);
         
-        // Wait briefly for NTP sync
+        // Wait for NTP sync (up to 5s)
         struct tm timeInfo;
-        if (getLocalTime(&timeInfo, 3000)) {
+        if (getLocalTime(&timeInfo, 5000)) {
             ntpSynced = true;
             DEBUG_PRINTF("[NTP] Time synced: %02d:%02d:%02d\n", timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
         } else {
-            DEBUG_PRINTLN("[NTP] Initial sync pending (will retry in background)");
+            DEBUG_PRINTLN("[NTP] Initial sync pending (SNTP will retry in background)");
         }
     } else {
         DEBUG_PRINTLN("\n[WiFi] Connection timeout - continuing offline");

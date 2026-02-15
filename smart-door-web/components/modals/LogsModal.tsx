@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { FileText, Download, Trash2, XCircle, Loader2, X, Fingerprint, Globe, CreditCard, ChevronDown } from 'lucide-react';
+import { FileText, Trash2, XCircle, Loader2, X, Fingerprint, Globe, CreditCard, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useServerLogs } from '@/hooks/useServerLogs';
 import { formatTimestamp, formatUid } from '@/lib/utils';
@@ -33,7 +33,7 @@ interface LogsModalProps {
 
 export function LogsModal({ isOpen, onClose }: LogsModalProps) {
   const { logs, loading, error, refreshLogs } = useServerLogs();
-  const [filter, setFilter] = useState<'all' | 'unlock' | 'denied'>('all');
+  const [filter, setFilter] = useState<'all' | 'unlocked' | 'denied' | 'RFID' | 'TOUCH' | 'WEB'>('all');
   const LOGS_PER_PAGE = 20;
   const [visibleCount, setVisibleCount] = useState(LOGS_PER_PAGE);
 
@@ -59,40 +59,11 @@ export function LogsModal({ isOpen, onClose }: LogsModalProps) {
 
   const filteredLogs = filter === 'all'
     ? logs
-    : logs.filter(log => log.action === filter);
-
-  const handleExportJson = () => {
-    const json = JSON.stringify(logs, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `access-logs-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Logs exported as JSON');
-  };
-
-  const handleExportCsv = () => {
-    const headers = ['Timestamp', 'Card UID', 'Nickname', 'Action', 'Success'];
-    const rows = logs.map(log => [
-      log.timestamp,
-      log.cardUid || '',
-      log.cardNickname || '',
-      log.action,
-      log.success.toString()
-    ]);
-    const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `access-logs-${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Logs exported as CSV');
-  };
+    : filter === 'unlocked'
+      ? logs.filter(log => log.success)
+      : filter === 'denied'
+        ? logs.filter(log => !log.success)
+        : logs.filter(log => log.accessType === filter);
 
   const handleClearLogs = async () => {
     if (!confirm('Are you sure you want to clear all logs? This action cannot be undone.')) return;
@@ -193,43 +164,30 @@ export function LogsModal({ isOpen, onClose }: LogsModalProps) {
         <div className="p-6 space-y-4">
           {/* Actions Bar */}
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex gap-1.5">
-              <Button
-                variant={filter === 'all' ? 'primary' : 'ghost'}
-                size="sm"
-                onClick={() => setFilter('all')}
-              >
-                All ({logs.length})
-              </Button>
-              <Button
-                variant={filter === 'unlock' ? 'primary' : 'ghost'}
-                size="sm"
-                onClick={() => setFilter('unlock')}
-              >
-                Unlocked ({logs.filter(l => l.action === 'unlock').length})
-              </Button>
-              <Button
-                variant={filter === 'denied' ? 'primary' : 'ghost'}
-                size="sm"
-                onClick={() => setFilter('denied')}
-              >
-                Denied ({logs.filter(l => l.action === 'denied').length})
-              </Button>
+            <div className="flex gap-1 flex-wrap">
+              {([
+                { key: 'all', label: 'All', count: logs.length },
+                { key: 'unlocked', label: 'Unlocked', count: logs.filter(l => l.success).length },
+                { key: 'denied', label: 'Denied', count: logs.filter(l => !l.success).length },
+                { key: 'RFID', label: 'Card', count: logs.filter(l => l.accessType === 'RFID').length },
+                { key: 'TOUCH', label: 'Touch', count: logs.filter(l => l.accessType === 'TOUCH').length },
+                { key: 'WEB', label: 'Web', count: logs.filter(l => l.accessType === 'WEB').length },
+              ] as const).map(({ key, label, count }) => (
+                <Button
+                  key={key}
+                  variant={filter === key ? 'primary' : 'ghost'}
+                  size="sm"
+                  onClick={() => setFilter(key)}
+                  className="text-xs"
+                >
+                  {label} ({count})
+                </Button>
+              ))}
             </div>
-            <div className="flex gap-1.5">
-              <Button variant="secondary" size="sm" onClick={handleExportJson} disabled={logs.length === 0}>
-                <Download className="w-3 h-3 mr-1" />
-                JSON
-              </Button>
-              <Button variant="secondary" size="sm" onClick={handleExportCsv} disabled={logs.length === 0}>
-                <Download className="w-3 h-3 mr-1" />
-                CSV
-              </Button>
-              <Button variant="danger" size="sm" onClick={handleClearLogs} disabled={logs.length === 0}>
-                <Trash2 className="w-3 h-3 mr-1" />
-                Clear
-              </Button>
-            </div>
+            <Button variant="danger" size="sm" onClick={handleClearLogs} disabled={logs.length === 0}>
+              <Trash2 className="w-3 h-3 mr-1" />
+              Clear
+            </Button>
           </div>
 
           {/* Logs List */}

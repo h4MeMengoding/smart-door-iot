@@ -95,10 +95,11 @@ const byte MASTER_CARDS[MAX_MASTER_CARDS][8] = {
 // 🕐 NTP CONFIGURATION
 // ============================================
 
-#define NTP_SERVER_1        "pool.ntp.org"
-#define NTP_SERVER_2        "time.nist.gov"
+#define NTP_SERVER_1        "id.pool.ntp.org"   // Indonesian NTP pool (closest)
+#define NTP_SERVER_2        "pool.ntp.org"
 #define NTP_GMT_OFFSET      25200       // GMT+7 (WIB) in seconds (7 * 3600)
 #define NTP_DAYLIGHT_OFFSET 0           // No daylight saving
+#define NTP_RESYNC_INTERVAL 1800000     // Re-check NTP every 30 minutes (ms)
 
 // ============================================
 //  OTA CONFIGURATION

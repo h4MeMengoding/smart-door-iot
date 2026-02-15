@@ -409,7 +409,15 @@ export function CardDelayCard() {
             <Save className="w-3 h-3 mr-1" /> Save
           </Button>
           <button
-            onClick={() => setShowScheduleFor(isScheduleOpen ? null : uid)}
+            onClick={() => {
+              if (!isFullscreen) {
+                // In compact view: open fullscreen with this card's schedule open
+                setShowScheduleFor(uid);
+                setIsFullscreen(true);
+              } else {
+                setShowScheduleFor(isScheduleOpen ? null : uid);
+              }
+            }}
             className="p-1.5 rounded-lg transition-colors"
             style={{
               background: isScheduleOpen ? 'var(--primary-light)' : 'var(--bg-surface)',
@@ -555,13 +563,13 @@ export function CardDelayCard() {
   const renderFullscreen = () => (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto"
       style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
       onClick={(e) => { if (e.target === e.currentTarget) setIsFullscreen(false); }}
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-        className="w-full max-w-lg max-h-[85vh] rounded-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-3xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col my-[5vh] mx-4"
         style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}
       >
         <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border)' }}>
@@ -593,10 +601,12 @@ export function CardDelayCard() {
         <AnimatePresence>
           {showBulkSchedule && <div className="px-4 pt-3">{renderBulkScheduleForm()}</div>}
         </AnimatePresence>
-        <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-          <AnimatePresence mode="popLayout">
-            {cards.map((card, index) => renderCardItem(card, index))}
-          </AnimatePresence>
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <AnimatePresence mode="popLayout">
+              {cards.map((card, index) => renderCardItem(card, index))}
+            </AnimatePresence>
+          </div>
         </div>
       </motion.div>
     </motion.div>
@@ -653,11 +663,11 @@ export function CardDelayCard() {
               )}
               {cards.length > 1 && (
                 <div className="flex items-center gap-2 mb-1">
-                  <button onClick={() => setShowBulkSchedule(!showBulkSchedule)}
+                  <button onClick={() => { setShowBulkSchedule(true); setIsFullscreen(true); }}
                     className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors"
                     style={{
-                      background: showBulkSchedule ? 'var(--primary-light)' : 'var(--bg-surface-hover)',
-                      color: showBulkSchedule ? 'var(--primary)' : 'var(--text-muted)',
+                      background: 'var(--bg-surface-hover)',
+                      color: 'var(--text-muted)',
                       border: '1px solid var(--border)',
                     }}
                   >
@@ -665,9 +675,8 @@ export function CardDelayCard() {
                   </button>
                 </div>
               )}
-              <AnimatePresence>{showBulkSchedule && !isFullscreen && renderBulkScheduleForm()}</AnimatePresence>
               <AnimatePresence mode="popLayout">
-                {cards.slice(-VISIBLE_COUNT).map((card, index) => renderCardItem(card, index))}
+                {cards.slice(0, VISIBLE_COUNT).map((card, index) => renderCardItem(card, index))}
               </AnimatePresence>
               {cards.length > VISIBLE_COUNT && (
                 <button onClick={() => setIsFullscreen(true)}

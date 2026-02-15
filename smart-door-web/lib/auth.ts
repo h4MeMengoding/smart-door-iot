@@ -6,21 +6,18 @@ const SESSION_COOKIE = 'smart-door-session';
 const ATTEMPTS_PREFIX = 'login-attempts:';
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 5 * 60 * 1000; // 5 minutes in ms
-const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours in ms
+const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
 
 // ─── In-memory rate limiting store ────────────────────────────
 // Survives hot reload via globalThis
 const globalForAuth = globalThis as unknown as {
   loginAttempts: Map<string, { count: number; lockedUntil: number }> | undefined;
-  sessions: Map<string, { expiresAt: number; ip: string }> | undefined;
 };
 
 const loginAttempts = globalForAuth.loginAttempts ?? new Map<string, { count: number; lockedUntil: number }>();
-const sessions = globalForAuth.sessions ?? new Map<string, { expiresAt: number; ip: string }>();
 
 if (process.env.NODE_ENV !== 'production') {
   globalForAuth.loginAttempts = loginAttempts;
-  globalForAuth.sessions = sessions;
 }
 
 // ─── PIN Verification ────────────────────────────────────────
@@ -103,29 +100,22 @@ export function clearAttempts(ip: string): void {
 }
 
 // ─── Session Management ──────────────────────────────────────
-function generateSessionToken(): string {
-  return crypto.randomBytes(32).toString('hex');
-}
-
-function signSession(token: string): string {
+function signSession(payload: string): string {
   const secret = process.env.AUTH_SESSION_SECRET || 'default-secret';
   return crypto
     .createHmac('sha256', secret)
-    .update(token)
+    .update(payload)
     .digest('hex');
 }
 
 export async function createSession(ip: string): Promise<string> {
-  const token = generateSessionToken();
+  // Token format: randomHex:timestamp — timestamp enables expiry check without server state
+  const random = crypto.randomBytes(32).toString('hex');
+  const token = `${random}:${Date.now()}`;
   const signature = signSession(token);
   const sessionId = `${token}.${signature}`;
 
-  sessions.set(token, {
-    expiresAt: Date.now() + SESSION_DURATION,
-    ip,
-  });
-
-  // Set cookie
+  // Set cookie — 30 day maxAge
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, sessionId, {
     httpOnly: true,
@@ -150,7 +140,7 @@ export async function validateSession(): Promise<boolean> {
 
     const [token, signature] = parts;
 
-    // Verify signature
+    // Verify HMAC signature
     const expectedSignature = signSession(token);
     const sigMatch = crypto.timingSafeEqual(
       Buffer.from(signature, 'hex'),
@@ -158,13 +148,12 @@ export async function validateSession(): Promise<boolean> {
     );
     if (!sigMatch) return false;
 
-    // Check session exists and not expired
-    const session = sessions.get(token);
-    if (!session) return false;
-    if (Date.now() > session.expiresAt) {
-      sessions.delete(token);
-      return false;
-    }
+    // Check expiry from embedded timestamp
+    const colonIdx = token.lastIndexOf(':');
+    if (colonIdx === -1) return false;
+    const createdAt = parseInt(token.substring(colonIdx + 1), 10);
+    if (isNaN(createdAt)) return false;
+    if (Date.now() - createdAt > SESSION_DURATION) return false;
 
     return true;
   } catch {
@@ -175,15 +164,6 @@ export async function validateSession(): Promise<boolean> {
 export async function destroySession(): Promise<void> {
   try {
     const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get(SESSION_COOKIE);
-
-    if (sessionCookie?.value) {
-      const parts = sessionCookie.value.split('.');
-      if (parts.length === 2) {
-        sessions.delete(parts[0]);
-      }
-    }
-
     cookieStore.delete(SESSION_COOKIE);
   } catch {
     // Ignore

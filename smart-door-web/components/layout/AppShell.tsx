@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import { Toaster } from 'react-hot-toast';
 
@@ -26,6 +27,15 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  // Register service worker for PWA
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {
+        // SW registration failed — non-critical
+      });
+    }
+  }, []);
+
   return (
     <ThemeProvider>
       <LayoutContent>{children}</LayoutContent>

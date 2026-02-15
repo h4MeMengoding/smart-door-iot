@@ -25,7 +25,17 @@ async function hasValidSession(request: NextRequest): Promise<boolean> {
   for (let i = 0; i < signature.length; i++) {
     result |= signature.charCodeAt(i) ^ expected.charCodeAt(i);
   }
-  return result === 0;
+  if (result !== 0) return false;
+
+  // Check expiry from embedded timestamp
+  const colonIdx = token.lastIndexOf(':');
+  if (colonIdx === -1) return false;
+  const createdAt = parseInt(token.substring(colonIdx + 1), 10);
+  if (isNaN(createdAt)) return false;
+  const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000;
+  if (Date.now() - createdAt > SESSION_DURATION) return false;
+
+  return true;
 }
 
 // POST /api/logs - Add new access log (from ESP32 via API key, or dashboard via session)

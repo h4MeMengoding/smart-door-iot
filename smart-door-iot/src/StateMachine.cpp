@@ -41,6 +41,7 @@ static unsigned long getCardDelayMs(byte* uid, byte size) {
         // Read schedule: 3 bytes [startHour, endHour, delaySec]
         uint8_t schedData[3] = {0};
         size_t schedLen = nvs.getBytesLength(schedKey.c_str());
+        DEBUG_PRINTF("[AUTH] Schedule key '%s': len=%d, currentHr=%d\n", schedKey.c_str(), (int)schedLen, currentHr);
         if (schedLen == 3) {
             nvs.getBytes(schedKey.c_str(), schedData, 3);
             uint8_t startH = schedData[0];
@@ -56,11 +57,13 @@ static unsigned long getCardDelayMs(byte* uid, byte size) {
                 inRange = (currentHr >= startH || currentHr < endH);
             }
             
+            DEBUG_PRINTF("[AUTH] Schedule %02d:00-%02d:00 delay=%us inRange=%s\n", startH, endH, schedDelay, inRange ? "YES" : "no");
             if (inRange) {
-                DEBUG_PRINTF("[AUTH] Schedule active (%02d:00-%02d:00): %us delay\n", startH, endH, schedDelay);
                 return (unsigned long)schedDelay * 1000;
             }
         }
+    } else {
+        DEBUG_PRINTLN("[AUTH] NTP not synced — schedule check skipped, using static delay");
     }
     
     // Fall back to static delay

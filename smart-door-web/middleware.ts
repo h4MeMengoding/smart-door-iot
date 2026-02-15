@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const SESSION_COOKIE = 'smart-door-session';
+const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
 
 // Routes that don't require authentication
 const PUBLIC_PATHS = [
@@ -47,7 +48,16 @@ async function verifySessionCookie(cookieValue: string): Promise<boolean> {
     for (let i = 0; i < signature.length; i++) {
       result |= signature.charCodeAt(i) ^ expectedSignature.charCodeAt(i);
     }
-    return result === 0;
+    if (result !== 0) return false;
+
+    // Check expiry from embedded timestamp (token format: randomHex:timestamp)
+    const colonIdx = token.lastIndexOf(':');
+    if (colonIdx === -1) return false;
+    const createdAt = parseInt(token.substring(colonIdx + 1), 10);
+    if (isNaN(createdAt)) return false;
+    if (Date.now() - createdAt > SESSION_DURATION) return false;
+
+    return true;
   } catch {
     return false;
   }
@@ -61,10 +71,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow static assets and Next.js internals
+  // Allow static assets, Next.js internals, and PWA files
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
+    pathname === '/sw.js' ||
+    pathname === '/manifest.json' ||
     pathname.includes('.')
   ) {
     return NextResponse.next();

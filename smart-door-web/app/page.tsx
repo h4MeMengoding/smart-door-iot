@@ -640,7 +640,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Dashboard — Masonry Layout */}
+        {/* Dashboard — Grid Layout */}
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
