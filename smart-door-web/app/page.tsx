@@ -31,6 +31,8 @@ import { DeviceToolsCard } from '@/components/dashboard/DeviceToolsCard';
 import { AutoLockCard } from '@/components/dashboard/AutoLockCard';
 import { CardDelayCard } from '@/components/dashboard/CardDelayCard';
 import { FloatingDoorButton } from '@/components/dashboard/FloatingDoorButton';
+import { DashboardSkeletons } from '@/components/dashboard/DashboardSkeleton';
+import { MasonryGrid } from '@/components/dashboard/MasonryGrid';
 import { CardsModal } from '@/components/modals/CardsModal';
 import { LogsModal } from '@/components/modals/LogsModal';
 import { ArrangeModal } from '@/components/modals/ArrangeModal';
@@ -68,8 +70,6 @@ function SortableCard({ id, index, isEditing, children }: SortableCardProps) {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
-    breakInside: 'avoid' as const,
-    marginBottom: '1.25rem',
   };
 
   return (
@@ -466,7 +466,7 @@ export default function DashboardPage() {
       case 'auto-lock':
         return <AutoLockCard currentDuration={status?.autoLockDuration} />;
       case 'card-delay':
-        return <CardDelayCard />;
+        return <CardDelayCard status={status} />;
       default:
         return null;
     }
@@ -640,27 +640,44 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Dashboard — Grid Layout */}
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext items={layout} strategy={rectSortingStrategy}>
-            <div style={{ columnWidth: '320px', columnGap: '1.25rem' }}>
-              {layout.map((id, index) => (
-                <SortableCard
-                  key={id}
-                  id={id}
-                  index={index}
-                  isEditing={isEditing}
-                >
-                  {renderCard(id)}
-                </SortableCard>
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+        {/* Dashboard — Masonry / Grid Layout */}
+        {isLoading ? (
+          <DashboardSkeletons layout={layout} />
+        ) : isEditing ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={layout} strategy={rectSortingStrategy}>
+              <MasonryGrid>
+                {layout.map((id, index) => (
+                  <SortableCard
+                    key={id}
+                    id={id}
+                    index={index}
+                    isEditing={isEditing}
+                  >
+                    {renderCard(id)}
+                  </SortableCard>
+                ))}
+              </MasonryGrid>
+            </SortableContext>
+          </DndContext>
+        ) : (
+          <MasonryGrid>
+            {layout.map((id, index) => (
+              <motion.div
+                key={id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: index * 0.06, ease: [0.25, 0.46, 0.45, 0.94] }}
+              >
+                {renderCard(id)}
+              </motion.div>
+            ))}
+          </MasonryGrid>
+        )}
         </>)}
       </div>
 

@@ -94,6 +94,7 @@ unsigned long cloneResultTime = 0;
 // ============================================
 
 bool rfidDisabled = false;
+unsigned long rfidAutoEnableTime = 0;
 
 // ============================================
 // SCHEDULED RESTART STATE

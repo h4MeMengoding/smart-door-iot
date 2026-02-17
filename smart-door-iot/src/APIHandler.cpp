@@ -8,6 +8,7 @@
 #include <WiFi.h>
 #include <ArduinoJson.h>
 #include <esp_ota_ops.h>
+#include <sys/time.h>
 
 // WebSocket instance
 AsyncWebSocket ws("/ws");
@@ -137,8 +138,17 @@ void setupAPIEndpoints(AsyncWebServer& server) {
         doc["uptime"] = String(uptime) + "s";
         doc["autoLockDuration"] = configuredAutoLockMs / 1000;
         doc["rfidDisabled"] = rfidDisabled;
+        doc["rfidAutoEnableMs"] = (rfidDisabled && rfidAutoEnableTime > 0 && rfidAutoEnableTime > millis()) ? (rfidAutoEnableTime - millis()) : 0;
         doc["ntpSynced"] = ntpSynced;
         doc["currentHour"] = getCurrentHour();
+
+        // Full time string for dashboard
+        struct tm statusTimeInfo;
+        if (getLocalTime(&statusTimeInfo, 50)) {
+            char timeBuf[20];
+            snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d", statusTimeInfo.tm_hour, statusTimeInfo.tm_min, statusTimeInfo.tm_sec);
+            doc["currentTime"] = timeBuf;
+        }
         
         String json;
         serializeJson(doc, json);
@@ -522,6 +532,159 @@ void setupAPIEndpoints(AsyncWebServer& server) {
         addCorsHeaders(response);
         request->send(response);
     });
+
+    // ============================================
+    // TIME / NTP ENDPOINTS
+    // ============================================
+
+    // GET /api/time - Get ESP32 current time
+    server.on("/api/time", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!validateApiKey(request)) {
+            AsyncWebServerResponse *response = request->beginResponse(401, "application/json", 
+                "{\"success\":false,\"message\":\"Unauthorized\"}");
+            addCorsHeaders(response);
+            request->send(response);
+            return;
+        }
+
+        DynamicJsonDocument doc(512);
+        doc["ntpSynced"] = ntpSynced;
+
+        struct tm timeInfo;
+        if (getLocalTime(&timeInfo, 100)) {
+            doc["hour"] = timeInfo.tm_hour;
+            doc["minute"] = timeInfo.tm_min;
+            doc["second"] = timeInfo.tm_sec;
+            doc["day"] = timeInfo.tm_mday;
+            doc["month"] = timeInfo.tm_mon + 1;
+            doc["year"] = timeInfo.tm_year + 1900;
+
+            char timeStr[20];
+            snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
+            doc["time"] = timeStr;
+
+            char dateStr[11];
+            snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d", timeInfo.tm_year + 1900, timeInfo.tm_mon + 1, timeInfo.tm_mday);
+            doc["date"] = dateStr;
+
+            // Unix timestamp
+            doc["epoch"] = (unsigned long)mktime(&timeInfo);
+        } else {
+            doc["hour"] = -1;
+            doc["minute"] = -1;
+            doc["second"] = -1;
+            doc["time"] = "not synced";
+            doc["date"] = "not synced";
+            doc["epoch"] = 0;
+        }
+
+        String json;
+        serializeJson(doc, json);
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+        addCorsHeaders(response);
+        request->send(response);
+    });
+
+    // POST /api/time/sync - Force NTP re-sync
+    server.on("/api/time/sync", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!validateApiKey(request)) {
+            AsyncWebServerResponse *response = request->beginResponse(401, "application/json", 
+                "{\"success\":false,\"message\":\"Unauthorized\"}");
+            addCorsHeaders(response);
+            request->send(response);
+            return;
+        }
+
+        DEBUG_PRINTLN("[NTP] Forced re-sync requested via API");
+        configTzTime(NTP_TIMEZONE, NTP_SERVER_1, NTP_SERVER_2);
+
+        // Wait for sync (up to 5s)
+        struct tm timeInfo;
+        bool synced = getLocalTime(&timeInfo, 5000);
+        if (synced) {
+            ntpSynced = true;
+        }
+
+        DynamicJsonDocument doc(256);
+        doc["success"] = synced;
+        doc["ntpSynced"] = ntpSynced;
+        if (synced) {
+            char timeStr[20];
+            snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
+            doc["time"] = timeStr;
+            doc["hour"] = timeInfo.tm_hour;
+            doc["message"] = "NTP re-synced successfully";
+        } else {
+            doc["message"] = "NTP sync failed — will retry in background";
+        }
+
+        String json;
+        serializeJson(doc, json);
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+        addCorsHeaders(response);
+        request->send(response);
+    });
+
+    // POST /api/time/set - Set time from browser (fallback when NTP fails)
+    server.on("/api/time/set", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
+        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            if (!validateApiKey(request)) {
+                AsyncWebServerResponse *response = request->beginResponse(401, "application/json", 
+                    "{\"success\":false,\"message\":\"Unauthorized\"}");
+                addCorsHeaders(response);
+                request->send(response);
+                return;
+            }
+
+            DynamicJsonDocument doc(256);
+            DeserializationError error = deserializeJson(doc, (const char*)data, len);
+            if (error || !doc.containsKey("epoch")) {
+                AsyncWebServerResponse *response = request->beginResponse(400, "application/json", 
+                    "{\"success\":false,\"message\":\"epoch required\"}");
+                addCorsHeaders(response);
+                request->send(response);
+                return;
+            }
+
+            unsigned long epoch = doc["epoch"] | 0UL;
+            if (epoch < 1000000000UL) {
+                AsyncWebServerResponse *response = request->beginResponse(400, "application/json", 
+                    "{\"success\":false,\"message\":\"Invalid epoch\"}");
+                addCorsHeaders(response);
+                request->send(response);
+                return;
+            }
+
+            // Set system time from browser epoch (UTC)
+            struct timeval tv;
+            tv.tv_sec = (time_t)epoch;
+            tv.tv_usec = 0;
+            settimeofday(&tv, NULL);
+
+            // Ensure timezone is set
+            setenv("TZ", NTP_TIMEZONE, 1);
+            tzset();
+
+            ntpSynced = true;
+            DEBUG_PRINTF("[TIME] Time set from browser: epoch=%lu\n", epoch);
+
+            struct tm timeInfo;
+            getLocalTime(&timeInfo, 100);
+
+            DynamicJsonDocument resp(256);
+            resp["success"] = true;
+            resp["message"] = "Time set from browser";
+            char timeStr[20];
+            snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d", timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
+            resp["time"] = timeStr;
+            resp["hour"] = timeInfo.tm_hour;
+
+            String json;
+            serializeJson(resp, json);
+            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+            addCorsHeaders(response);
+            request->send(response);
+        });
     
     // POST /api/system/restart - Restart ESP32
     server.on("/api/system/restart", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -750,6 +913,7 @@ void setupAPIEndpoints(AsyncWebServer& server) {
         }
 
         rfidDisabled = !rfidDisabled;
+        rfidAutoEnableTime = 0; // Clear any timed disable on manual toggle
         nvs.putUChar(NVS_RFID_OFF_KEY, rfidDisabled ? 1 : 0);
         
         playBuzzerPattern(PATTERN_RFID_DISABLED);
@@ -759,6 +923,7 @@ void setupAPIEndpoints(AsyncWebServer& server) {
         DynamicJsonDocument doc(256);
         doc["success"] = true;
         doc["rfidDisabled"] = rfidDisabled;
+        doc["rfidAutoEnableMs"] = 0;
         doc["message"] = rfidDisabled ? "RFID disabled" : "RFID enabled";
 
         String json;
@@ -784,6 +949,7 @@ void setupAPIEndpoints(AsyncWebServer& server) {
 
         DynamicJsonDocument doc(128);
         doc["rfidDisabled"] = rfidDisabled;
+        doc["rfidAutoEnableMs"] = (rfidDisabled && rfidAutoEnableTime > 0 && rfidAutoEnableTime > millis()) ? (rfidAutoEnableTime - millis()) : 0;
 
         String json;
         serializeJson(doc, json);
@@ -791,6 +957,60 @@ void setupAPIEndpoints(AsyncWebServer& server) {
         AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
         addCorsHeaders(response);
         request->send(response);
+    });
+
+    // POST /api/rfid/disable-timed - Disable RFID for N minutes then auto-enable
+    server.on("/api/rfid/disable-timed", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!validateApiKey(request)) {
+            AsyncWebServerResponse *response = request->beginResponse(401, "application/json",
+                "{\"success\":false,\"message\":\"Unauthorized\"}");
+            addCorsHeaders(response);
+            request->send(response);
+            return;
+        }
+
+        DynamicJsonDocument body(256);
+        if (deserializeJson(body, data, len)) {
+            AsyncWebServerResponse *response = request->beginResponse(400, "application/json",
+                "{\"success\":false,\"message\":\"Invalid JSON\"}");
+            addCorsHeaders(response);
+            request->send(response);
+            return;
+        }
+
+        int minutes = body["minutes"] | 0;
+        if (minutes < 1 || minutes > 60) {
+            AsyncWebServerResponse *response = request->beginResponse(400, "application/json",
+                "{\"success\":false,\"message\":\"minutes must be 1-60\"}");
+            addCorsHeaders(response);
+            request->send(response);
+            return;
+        }
+
+        rfidDisabled = true;
+        rfidAutoEnableTime = millis() + (unsigned long)minutes * 60UL * 1000UL;
+        nvs.putUChar(NVS_RFID_OFF_KEY, 1);
+        playBuzzerPattern(PATTERN_RFID_DISABLED);
+
+        DEBUG_PRINTF("[API] RFID timed disable: %d min\n", minutes);
+
+        unsigned long remainMs = rfidAutoEnableTime - millis();
+        DynamicJsonDocument doc(256);
+        doc["success"] = true;
+        doc["rfidDisabled"] = true;
+        doc["rfidAutoEnableMs"] = remainMs;
+        doc["message"] = "RFID disabled for " + String(minutes) + " minutes";
+
+        String json;
+        serializeJson(doc, json);
+
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+        addCorsHeaders(response);
+        request->send(response);
+
+        lastEvent = "RFID disabled (" + String(minutes) + "min)";
+        broadcastDoorStatus();
     });
 
     // ============================================
@@ -1207,6 +1427,17 @@ void broadcastDoorStatus() {
     data["uptime"] = String((millis() - systemStartTime) / 1000) + "s";
     data["autoLockDuration"] = configuredAutoLockMs / 1000;
     data["rfidDisabled"] = rfidDisabled;
+    data["rfidAutoEnableMs"] = (rfidDisabled && rfidAutoEnableTime > 0 && rfidAutoEnableTime > millis()) ? (rfidAutoEnableTime - millis()) : 0;
+
+    // Include time info for dashboard sync
+    struct tm ti;
+    if (getLocalTime(&ti, 50)) {
+        char timeBuf[20];
+        snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d", ti.tm_hour, ti.tm_min, ti.tm_sec);
+        data["currentTime"] = timeBuf;
+        data["currentHour"] = ti.tm_hour;
+    }
+    data["ntpSynced"] = ntpSynced;
     
     String json;
     serializeJson(doc, json);

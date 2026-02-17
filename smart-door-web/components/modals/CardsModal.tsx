@@ -8,6 +8,7 @@ import { Card as CardType } from '@/lib/types';
 import { formatUid } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { dashboardEvents } from '@/lib/dashboardEvents';
+import { logSystemEvent } from '@/lib/systemEvents';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { RfidCardVisual } from '@/components/ui/RfidCardVisual';
@@ -127,6 +128,7 @@ export function CardsModal({ isOpen, onClose, onCardsChanged }: CardsModalProps)
       const result = await response.json();
       if (result.success) {
         toast.success('Card added successfully');
+        logSystemEvent('card_added', `Card added: ${newCardNickname || newCardUid}`);
         setNewCardUid('');
         setNewCardNickname('');
         setShowAddForm(false);
@@ -161,6 +163,7 @@ export function CardsModal({ isOpen, onClose, onCardsChanged }: CardsModalProps)
       const result = await response.json();
       if (result.success) {
         toast.success('Card removed successfully');
+        logSystemEvent('card_removed', `Card removed: ${uid}`);
         fetchCards();
         onCardsChanged?.();
         dashboardEvents.emit('cards-changed');
@@ -182,6 +185,7 @@ export function CardsModal({ isOpen, onClose, onCardsChanged }: CardsModalProps)
       const result = await response.json();
       if (result.success) {
         toast.success('Name updated');
+        logSystemEvent('card_renamed', `Card renamed: ${uid} → ${editNickname}`);
         setEditingCard(null);
         fetchCards();
         onCardsChanged?.();

@@ -6,7 +6,7 @@ import { Toaster } from 'react-hot-toast';
 
 function LayoutContent({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex items-start justify-center relative overflow-hidden">
+    <div className="min-h-screen flex items-start justify-center relative overflow-x-hidden">
       {/* Animated background glows */}
       <div className="glow glow-1" />
       <div className="glow glow-2" />

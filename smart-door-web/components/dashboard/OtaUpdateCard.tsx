@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/Button';
 import { Upload, FileUp, CheckCircle, XCircle, AlertTriangle, Loader2, X } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/config';
+import { logSystemEvent } from '@/lib/systemEvents';
 import toast from 'react-hot-toast';
 
 type OtaState = 'idle' | 'selected' | 'uploading' | 'flashing' | 'success' | 'error';
@@ -99,6 +100,7 @@ export function OtaUpdateCard() {
         if (isSuccess) {
           setState('success');
           toast.success('Firmware updated! ESP32 restarting...');
+          logSystemEvent('ota_upload', `OTA firmware uploaded: ${file?.name}`);
           // Auto refresh after 5 seconds
           setTimeout(() => {
             window.location.reload();

@@ -178,6 +178,17 @@ void loop() {
         }
     }
 
+    // RFID auto-re-enable timer check
+    if (rfidDisabled && rfidAutoEnableTime > 0 && millis() >= rfidAutoEnableTime) {
+        rfidDisabled = false;
+        rfidAutoEnableTime = 0;
+        nvs.putUChar(NVS_RFID_OFF_KEY, 0);
+        playBuzzerPattern(PATTERN_RFID_DISABLED);
+        DEBUG_PRINTLN("[RFID] Auto re-enabled (timer expired)");
+        lastEvent = "RFID auto-enabled (timer)";
+        broadcastDoorStatus();
+    }
+
     // Periodic NTP re-check (every 30 min) — ensures time stays accurate
     if (wifiConnected) {
         static unsigned long lastNtpCheck = 0;
@@ -187,7 +198,7 @@ void loop() {
             int hr = getCurrentHour();
             if (hr < 0) {
                 DEBUG_PRINTLN("[NTP] Re-sync: time not available, re-initializing...");
-                configTime(NTP_GMT_OFFSET, NTP_DAYLIGHT_OFFSET, NTP_SERVER_1, NTP_SERVER_2);
+                configTzTime(NTP_TIMEZONE, NTP_SERVER_1, NTP_SERVER_2);
             } else {
                 DEBUG_PRINTF("[NTP] Re-sync check OK: %02d:xx\n", hr);
             }

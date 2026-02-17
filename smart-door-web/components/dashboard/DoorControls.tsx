@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/Button';
 import { LockOpen, Lock, DoorClosedLocked } from 'lucide-react';
 import { api } from '@/lib/api';
+import { logSystemEvent } from '@/lib/systemEvents';
 import toast from 'react-hot-toast';
 
 interface DoorControlsProps {
@@ -21,6 +22,7 @@ export function DoorControls({ onAction, isLocked = true }: DoorControlsProps) {
       const result = isLocked ? await api.unlockDoor() : await api.lockDoor();
       if (result.success) {
         toast.success(isLocked ? 'Door unlocked successfully' : 'Door locked successfully');
+        logSystemEvent(isLocked ? 'door_unlocked' : 'door_locked', `Door ${isLocked ? 'unlocked' : 'locked'} via dashboard`);
         onAction?.();
       } else {
         toast.error(result.message || `Failed to ${isLocked ? 'unlock' : 'lock'} door`);

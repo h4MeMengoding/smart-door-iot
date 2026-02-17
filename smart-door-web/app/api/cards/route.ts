@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCards, addCard, removeCard, updateCardName } from '@/lib/db';
+import { getCards, addCard, removeCard, updateCardName, addSystemEvent } from '@/lib/db';
 import { isMasterCardUid } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -43,6 +43,12 @@ export async function POST(request: NextRequest) {
     }
 
     const card = await addCard(uid, nickname);
+
+    // Log system event
+    try {
+      await addSystemEvent('card_added', `Card added: ${nickname || uid}`);
+    } catch { /* non-critical */ }
+
     return NextResponse.json({
       success: true,
       card: {
@@ -78,6 +84,12 @@ export async function DELETE(request: NextRequest) {
     }
 
     await removeCard(uid);
+
+    // Log system event
+    try {
+      await addSystemEvent('card_removed', `Card removed: ${uid}`);
+    } catch { /* non-critical */ }
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Error removing card:', error);

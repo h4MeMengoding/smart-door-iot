@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { addAccessLog, getCardByUid, validateApiKey } from '@/lib/db';
+import { addAccessLog, getCardByUid, validateApiKey, addSystemEvent } from '@/lib/db';
 import { prisma } from '@/lib/prisma';
 import { logEvents } from '@/lib/events';
 
@@ -103,6 +103,13 @@ export async function POST(request: NextRequest) {
 
     // Emit ke semua SSE clients
     logEvents.emit(mappedLog);
+
+    // Auto-create system event from access log
+    try {
+      const evtType = accessResult === 'granted' ? 'access_granted' : 'access_denied';
+      const evtDesc = `${accessType} ${accessResult}: ${displayName}`;
+      await addSystemEvent(evtType, evtDesc);
+    } catch { /* non-critical */ }
 
     return NextResponse.json({ success: true, log: mappedLog });
   } catch (error) {

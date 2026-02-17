@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { LockOpen, Lock } from 'lucide-react';
 import { api } from '@/lib/api';
+import { logSystemEvent } from '@/lib/systemEvents';
 import toast from 'react-hot-toast';
 
 interface FloatingDoorButtonProps {
@@ -48,6 +49,7 @@ export function FloatingDoorButton({ isLocked, onAction }: FloatingDoorButtonPro
       const result = isLocked ? await api.unlockDoor() : await api.lockDoor();
       if (result.success) {
         toast.success(isLocked ? 'Door unlocked' : 'Door locked');
+        logSystemEvent(isLocked ? 'door_unlocked' : 'door_locked', `Door ${isLocked ? 'unlocked' : 'locked'} via mobile button`);
         onAction?.();
       } else {
         toast.error(result.message || 'Action failed');

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/Button';
 import { Power, RotateCcw, Loader2, CheckCircle } from 'lucide-react';
 import { api } from '@/lib/api';
+import { logSystemEvent } from '@/lib/systemEvents';
 import toast from 'react-hot-toast';
 
 type RestartState = 'idle' | 'confirming' | 'restarting' | 'success';
@@ -24,6 +25,7 @@ export function RestartCard() {
         await api.restartEsp();
         setState('success');
         toast.success('ESP32 is restarting...');
+        logSystemEvent('esp_restart', 'ESP32 restarted from restart card');
         setTimeout(() => {
           setState('idle');
         }, 12000);

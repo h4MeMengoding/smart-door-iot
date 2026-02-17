@@ -11,10 +11,11 @@ import {
 import { DoorStatus } from '@/lib/types';
 import { api } from '@/lib/api';
 import { getApiBaseUrl } from '@/lib/config';
+import { logSystemEvent } from '@/lib/systemEvents';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
-type ActivePanel = null | 'add-card' | 'ota' | 'restart' | 'clone' | 'rfid-toggle' | 'schedule-restart';
+type ActivePanel = null | 'add-card' | 'ota' | 'restart' | 'clone' | 'rfid-toggle';
 type OtaState = 'idle' | 'selected' | 'uploading' | 'flashing' | 'success' | 'error';
 type RestartState = 'idle' | 'confirming' | 'restarting' | 'success';
 type CloneUiState = 'idle' | 'wait-source' | 'wait-target' | 'success' | 'failed' | 'timeout';
@@ -53,6 +54,9 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
   // --- RFID Toggle state ---
   const [rfidDisabled, setRfidDisabled] = useState(status?.rfidDisabled ?? false);
   const [isTogglingRfid, setIsTogglingRfid] = useState(false);
+  const [rfidTimerMinutes, setRfidTimerMinutes] = useState(5);
+  const [rfidCountdownMs, setRfidCountdownMs] = useState(0);
+  const rfidCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // --- Schedule Restart state ---
   const [schedMode, setSchedMode] = useState(0); // 0=off, 1=at_hour, 2=every_hours
@@ -70,11 +74,37 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
     if (status?.rfidDisabled !== undefined) {
       setRfidDisabled(status.rfidDisabled);
     }
-  }, [status?.rfidDisabled]);
+    // Sync countdown from status (WebSocket / polling)
+    if (status?.rfidAutoEnableMs !== undefined && status.rfidAutoEnableMs > 0) {
+      setRfidCountdownMs(status.rfidAutoEnableMs);
+    } else if (status?.rfidDisabled === false) {
+      setRfidCountdownMs(0);
+    }
+  }, [status?.rfidDisabled, status?.rfidAutoEnableMs]);
 
-  // Load schedule restart config when panel opens
+  // Local countdown ticker
   useEffect(() => {
-    if (activePanel === 'schedule-restart' && !schedLoaded) {
+    if (rfidCountdownMs > 0) {
+      rfidCountdownRef.current = setInterval(() => {
+        setRfidCountdownMs(prev => {
+          if (prev <= 1000) {
+            return 0;
+          }
+          return prev - 1000;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (rfidCountdownRef.current) {
+        clearInterval(rfidCountdownRef.current);
+        rfidCountdownRef.current = null;
+      }
+    };
+  }, [rfidCountdownMs > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load schedule restart config when restart panel opens
+  useEffect(() => {
+    if (activePanel === 'restart' && !schedLoaded) {
       (async () => {
         try {
           const config = await api.getScheduledRestart();
@@ -96,6 +126,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
       const result = await api.toggleRegistrationMode();
       if (result.success) {
         toast.success(result.message || (isRegistrationMode ? 'Exited registration mode' : 'Entered registration mode'));
+        logSystemEvent('registration_mode', isRegistrationMode ? 'Exited registration mode' : 'Entered registration mode');
       } else {
         toast.error(result.message || 'Failed to toggle registration mode');
       }
@@ -150,6 +181,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
         if (isSuccess) {
           setOtaState('success');
           toast.success('Firmware updated! ESP32 restarting...');
+          logSystemEvent('ota_upload', `OTA firmware uploaded: ${otaFile?.name} (${otaFile ? formatSize(otaFile.size) : ''})`);
           setTimeout(() => window.location.reload(), 5000);
         } else {
           setOtaError(xhr.responseText || 'Upload failed');
@@ -185,6 +217,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
         await api.restartEsp();
         setRestartState('success');
         toast.success('ESP32 is restarting...');
+        logSystemEvent('esp_restart', 'ESP32 restarted from device tools');
         setTimeout(() => { setRestartState('idle'); }, 12000);
       } catch {
         toast.error('Failed to restart ESP32');
@@ -200,7 +233,9 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
       const result = await api.toggleRfid();
       if (result.success) {
         setRfidDisabled(result.rfidDisabled);
+        setRfidCountdownMs(0);
         toast.success(result.message);
+        logSystemEvent('rfid_toggled', result.rfidDisabled ? 'RFID reader disabled' : 'RFID reader enabled');
       } else {
         toast.error('Failed to toggle RFID');
       }
@@ -209,6 +244,32 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
     } finally {
       setIsTogglingRfid(false);
     }
+  };
+
+  const handleTimedDisable = async () => {
+    setIsTogglingRfid(true);
+    try {
+      const result = await api.disableRfidTimed(rfidTimerMinutes);
+      if (result.success) {
+        setRfidDisabled(true);
+        setRfidCountdownMs(result.rfidAutoEnableMs);
+        toast.success(result.message);
+        logSystemEvent('rfid_toggled', `RFID disabled for ${rfidTimerMinutes} min`);
+      } else {
+        toast.error('Failed to disable RFID');
+      }
+    } catch {
+      toast.error('Failed to communicate with device');
+    } finally {
+      setIsTogglingRfid(false);
+    }
+  };
+
+  const formatCountdown = (ms: number) => {
+    const totalSec = Math.ceil(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
   // ── Schedule Restart handlers ──
@@ -221,13 +282,13 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
         interval: schedInterval,
       });
       if (result.success) {
-        toast.success(
-          schedMode === 0
-            ? 'Scheduled restart disabled'
-            : schedMode === 1
-            ? `Restart scheduled at ${schedHour}:00 daily`
-            : `Restart every ${schedInterval} hours`
-        );
+        const desc = schedMode === 0
+          ? 'Scheduled restart disabled'
+          : schedMode === 1
+          ? `Restart scheduled at ${schedHour}:00 daily`
+          : `Restart every ${schedInterval} hours`;
+        toast.success(desc);
+        logSystemEvent('scheduled_restart', desc);
       }
     } catch {
       toast.error('Failed to save schedule');
@@ -301,6 +362,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
         cloneStartRef.current = Date.now();
         setCloneState('wait-source');
         toast.success(result.message || 'Clone mode activated');
+        logSystemEvent('clone_started', 'Clone mode activated');
         clonePollRef.current = setInterval(pollCloneStatus, 600);
       } else {
         toast.error(result.message || 'Failed to start clone mode');
@@ -316,6 +378,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
       if (result.success) {
         resetClone();
         toast.success('Clone mode cancelled');
+        logSystemEvent('clone_cancelled', 'Clone mode cancelled');
       }
     } catch {
       toast.error('Failed to cancel clone mode');
@@ -419,19 +482,6 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
             {rfidDisabled && (
               <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ background: 'var(--danger)' }} />
             )}
-          </button>
-
-          <button
-            onClick={() => togglePanel('schedule-restart')}
-            className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all"
-            style={{
-              background: activePanel === 'schedule-restart' ? 'var(--primary-light)' : 'var(--bg-surface-hover)',
-              border: `1px solid ${activePanel === 'schedule-restart' ? 'var(--primary)' : 'var(--border)'}`,
-              color: activePanel === 'schedule-restart' ? 'var(--primary)' : 'var(--text-secondary)',
-            }}
-          >
-            <Clock className="w-4 h-4" />
-            <span className="text-[11px] font-medium">Schedule</span>
           </button>
         </div>
 
@@ -582,7 +632,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
             </motion.div>
           )}
 
-          {/* ── Restart Panel ── */}
+          {/* ── Restart Panel (Now + Schedule) ── */}
           {activePanel === 'restart' && (
             <motion.div
               key="restart"
@@ -596,9 +646,11 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                 className="p-3.5 rounded-xl space-y-3"
                 style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}
               >
+                {/* Restart Now */}
                 {restartState === 'idle' && (
                   <>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Restart Now</p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                       Restart the ESP32. Device will be offline for ~10 seconds.
                     </p>
                     <Button onClick={handleRestart} variant="danger" size="sm" className="w-full">
@@ -638,6 +690,94 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                     <span className="text-xs font-medium" style={{ color: 'var(--success-text)' }}>Restart initiated. Back online in ~10s.</span>
                   </div>
                 )}
+
+                {/* Divider */}
+                <div className="border-t" style={{ borderColor: 'var(--border)' }} />
+
+                {/* Schedule Restart */}
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  <Clock className="w-3.5 h-3.5 inline mr-1.5" style={{ color: 'var(--primary)' }} />
+                  Scheduled Restart
+                </p>
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  Automatically restart ESP32 on a schedule to keep it healthy.
+                </p>
+
+                {/* Mode selector */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Mode</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { value: 0, label: 'Off' },
+                      { value: 1, label: 'At Hour' },
+                      { value: 2, label: 'Every X hrs' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setSchedMode(opt.value)}
+                        className="px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all"
+                        style={{
+                          background: schedMode === opt.value ? 'var(--primary-light)' : 'var(--bg-surface)',
+                          color: schedMode === opt.value ? 'var(--primary)' : 'var(--text-muted)',
+                          border: `1px solid ${schedMode === opt.value ? 'var(--primary)' : 'var(--border)'}`,
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* At hour config */}
+                {schedMode === 1 && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Restart at</label>
+                    <select
+                      value={schedHour}
+                      onChange={(e) => setSchedHour(parseInt(e.target.value))}
+                      className="w-full px-2.5 py-1.5 rounded-lg text-xs"
+                      style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+                    >
+                      {Array.from({ length: 24 }, (_, i) => (
+                        <option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>
+                      ))}
+                    </select>
+                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      ESP32 will restart once daily at this hour (WIB).
+                    </p>
+                  </div>
+                )}
+
+                {/* Every X hours config */}
+                {schedMode === 2 && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Restart every</label>
+                    <select
+                      value={schedInterval}
+                      onChange={(e) => setSchedInterval(parseInt(e.target.value))}
+                      className="w-full px-2.5 py-1.5 rounded-lg text-xs"
+                      style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+                    >
+                      {[1, 2, 3, 4, 6, 8, 12, 24].map((h) => (
+                        <option key={h} value={h}>{h} hour{h > 1 ? 's' : ''}</option>
+                      ))}
+                    </select>
+                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      ESP32 will restart after running for this many hours.
+                    </p>
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleSaveScheduleRestart}
+                  isLoading={isSavingSched}
+                  variant="primary"
+                  size="sm"
+                  className="w-full"
+                >
+                  <Clock className="w-3.5 h-3.5 mr-1.5" />
+                  {schedMode === 0 ? 'Save (Disabled)' : 'Save Schedule'}
+                </Button>
               </div>
             </motion.div>
           )}
@@ -774,6 +914,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                 className="p-3.5 rounded-xl space-y-3"
                 style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}
               >
+                {/* Status banner */}
                 <div className="flex items-start gap-2 p-2.5 rounded-xl" style={{
                   background: rfidDisabled
                     ? 'var(--danger-light)'
@@ -782,7 +923,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                   <WifiOff className="w-4 h-4 shrink-0 mt-0.5" style={{
                     color: rfidDisabled ? 'var(--danger)' : 'var(--success)',
                   }} />
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold" style={{
                       color: rfidDisabled ? 'var(--danger-text)' : 'var(--success-text)',
                     }}>
@@ -790,11 +931,54 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                     </p>
                     <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                       {rfidDisabled
-                        ? 'All card scans are ignored. Touch sensor still works.'
+                        ? rfidCountdownMs > 0
+                          ? `Auto-enables in ${formatCountdown(rfidCountdownMs)}`
+                          : 'Disabled permanently until re-enabled.'
                         : 'RFID reader is active and accepting cards.'}
                     </p>
                   </div>
+                  {rfidDisabled && rfidCountdownMs > 0 && (
+                    <span className="text-sm font-mono font-bold tabular-nums shrink-0" style={{ color: 'var(--danger)' }}>
+                      {formatCountdown(rfidCountdownMs)}
+                    </span>
+                  )}
                 </div>
+
+                {/* Timed disable picker — only show when RFID is enabled */}
+                {!rfidDisabled && (
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+                      Disable for duration
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        value={rfidTimerMinutes}
+                        onChange={(e) => setRfidTimerMinutes(Number(e.target.value))}
+                        className="flex-1 rounded-lg px-2.5 py-1.5 text-xs font-medium outline-none"
+                        style={{
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border)',
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        {[1, 2, 3, 5, 10, 15, 20, 30, 45, 60].map(m => (
+                          <option key={m} value={m}>{m} min</option>
+                        ))}
+                      </select>
+                      <Button
+                        onClick={handleTimedDisable}
+                        isLoading={isTogglingRfid}
+                        variant="danger"
+                        size="sm"
+                      >
+                        <Clock className="w-3.5 h-3.5 mr-1" />
+                        Disable
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Toggle button */}
                 <Button
                   onClick={handleToggleRfid}
                   isLoading={isTogglingRfid}
@@ -803,112 +987,17 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                   className="w-full"
                 >
                   <WifiOff className="w-3.5 h-3.5 mr-1.5" />
-                  {rfidDisabled ? 'Enable RFID' : 'Disable RFID'}
+                  {rfidDisabled ? 'Enable RFID Now' : 'Disable Permanently'}
                 </Button>
+
                 <div className="flex items-start gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
-                  <span>When disabled, the device will beep 5 times rapidly. The setting persists across restarts.</span>
+                  <span>When disabled, the device will beep 5 times rapidly. Permanent disable persists across restarts.</span>
                 </div>
               </div>
             </motion.div>
           )}
 
-          {/* ── Schedule Restart Panel ── */}
-          {activePanel === 'schedule-restart' && (
-            <motion.div
-              key="schedule-restart"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
-            >
-              <div
-                className="p-3.5 rounded-xl space-y-3"
-                style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}
-              >
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Automatically restart ESP32 on a schedule to keep it healthy.
-                </p>
-
-                {/* Mode selector */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Mode</label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {[
-                      { value: 0, label: 'Off' },
-                      { value: 1, label: 'At Hour' },
-                      { value: 2, label: 'Every X hrs' },
-                    ].map((opt) => (
-                      <button
-                        key={opt.value}
-                        onClick={() => setSchedMode(opt.value)}
-                        className="px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all"
-                        style={{
-                          background: schedMode === opt.value ? 'var(--primary-light)' : 'var(--bg-surface)',
-                          color: schedMode === opt.value ? 'var(--primary)' : 'var(--text-muted)',
-                          border: `1px solid ${schedMode === opt.value ? 'var(--primary)' : 'var(--border)'}`,
-                        }}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* At hour config */}
-                {schedMode === 1 && (
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Restart at</label>
-                    <select
-                      value={schedHour}
-                      onChange={(e) => setSchedHour(parseInt(e.target.value))}
-                      className="w-full px-2.5 py-1.5 rounded-lg text-xs"
-                      style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                    >
-                      {Array.from({ length: 24 }, (_, i) => (
-                        <option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>
-                      ))}
-                    </select>
-                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                      ESP32 will restart once daily at this hour (WIB).
-                    </p>
-                  </div>
-                )}
-
-                {/* Every X hours config */}
-                {schedMode === 2 && (
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Restart every</label>
-                    <select
-                      value={schedInterval}
-                      onChange={(e) => setSchedInterval(parseInt(e.target.value))}
-                      className="w-full px-2.5 py-1.5 rounded-lg text-xs"
-                      style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                    >
-                      {[1, 2, 3, 4, 6, 8, 12, 24].map((h) => (
-                        <option key={h} value={h}>{h} hour{h > 1 ? 's' : ''}</option>
-                      ))}
-                    </select>
-                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                      ESP32 will restart after running for this many hours.
-                    </p>
-                  </div>
-                )}
-
-                <Button
-                  onClick={handleSaveScheduleRestart}
-                  isLoading={isSavingSched}
-                  variant="primary"
-                  size="sm"
-                  className="w-full"
-                >
-                  <Clock className="w-3.5 h-3.5 mr-1.5" />
-                  {schedMode === 0 ? 'Save (Disabled)' : 'Save Schedule'}
-                </Button>
-              </div>
-            </motion.div>
-          )}
         </AnimatePresence>
       </CardContent>
     </Card>

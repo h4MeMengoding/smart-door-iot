@@ -8,6 +8,23 @@ export interface DoorStatus {
   uptime: string;
   autoLockDuration?: number; // seconds, from ESP32 config
   rfidDisabled?: boolean;    // RFID reader disabled flag
+  rfidAutoEnableMs?: number;  // Milliseconds until RFID auto re-enables (0 = no timer)
+  ntpSynced?: boolean;       // NTP time sync status
+  currentHour?: number;      // Current ESP32 hour (0-23)
+  currentTime?: string;      // Current ESP32 time string "HH:MM:SS"
+}
+
+export interface EspTime {
+  ntpSynced: boolean;
+  hour: number;
+  minute: number;
+  second: number;
+  day: number;
+  month: number;
+  year: number;
+  time: string;
+  date: string;
+  epoch: number;
 }
 
 export interface SystemInfo {

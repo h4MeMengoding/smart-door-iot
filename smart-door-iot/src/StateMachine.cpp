@@ -124,6 +124,7 @@ void handleStateAuthCheck() {
     // Check if master card
     if (isMasterCard(uid, size)) {
         DEBUG_PRINTLN("[AUTH] Master card detected -> REGISTRATION_MODE");
+        DEBUG_PRINTF("[AUTH] Master UID: %s (size=%d)\n", uidToString(uid, size).c_str(), size);
         playBuzzerPattern(PATTERN_ENTER_REG_MODE);
         currentState = STATE_REGISTRATION_MODE;
         stateStartTime = millis();
@@ -174,6 +175,21 @@ void handleStateAuthCheck() {
     
     // Invalid card
     DEBUG_PRINTLN("[AUTH] Invalid card -> IDLE");
+    DEBUG_PRINTF("[AUTH] Rejected UID: %s (size=%d). Registered=%d, Master=%s\n",
+                uidToString(uid, size).c_str(), size, userCardCount,
+                isMasterCard(uid, size) ? "false (re-check)" : "no");
+    // Debug: print all master card UIDs for comparison
+    for (uint8_t m = 0; m < MAX_MASTER_CARDS; m++) {
+        byte mSize = MASTER_CARDS[m][0];
+        String mUid = "";
+        for (byte j = 0; j < mSize; j++) {
+            if (j > 0) mUid += ":";
+            if (MASTER_CARDS[m][j+1] < 0x10) mUid += "0";
+            mUid += String(MASTER_CARDS[m][j+1], HEX);
+        }
+        mUid.toUpperCase();
+        DEBUG_PRINTF("[AUTH] Master[%d]: %s (size=%d)\n", m, mUid.c_str(), mSize);
+    }
     playBuzzerPattern(PATTERN_INVALID_CARD);
     rfidLedFail();  // RFID LED: fast blink 2 seconds
     currentState = STATE_IDLE;

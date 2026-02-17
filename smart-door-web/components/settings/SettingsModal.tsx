@@ -1,14 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { X, Wifi, Volume2, Power, Settings as SettingsIcon, Sun, Moon } from 'lucide-react';
+import { X, Wifi, Volume2, Power, Settings as SettingsIcon, Sun, Moon, Clock, RefreshCw, Terminal } from 'lucide-react';
 import { getEsp32Url, setEsp32Url } from '@/lib/config';
 import { api } from '@/lib/api';
+import { EspTime } from '@/lib/types';
 import { useTheme } from '@/components/providers/ThemeProvider';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { logSystemEvent } from '@/lib/systemEvents';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -21,10 +23,36 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [isTesting, setIsTesting] = useState(false);
   const { theme, setTheme } = useTheme();
 
+  // ESP32 Clock state
+  const [espTime, setEspTime] = useState<EspTime | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [clockLoading, setClockLoading] = useState(false);
+  const clockIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Track if we already auto-pushed time this session
+  const timePushedRef = useRef(false);
+
+  // System Event Log state
+  const [events, setEvents] = useState<{ id: string; eventType: string; description: string | null; createdAt: string }[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const eventLogRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (isOpen) {
       setEsp32UrlState(getEsp32Url());
+      // Fetch ESP32 time
+      fetchEspTime();
+      // Start polling ESP32 clock every 2s
+      clockIntervalRef.current = setInterval(fetchEspTime, 2000);
+      // Fetch system events
+      fetchEvents();
     }
+    return () => {
+      if (clockIntervalRef.current) {
+        clearInterval(clockIntervalRef.current);
+        clockIntervalRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   // Close on Escape
@@ -42,6 +70,90 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     };
   }, [isOpen, onClose]);
 
+  const fetchEspTime = async () => {
+    try {
+      const t = await api.getEspTime();
+      setEspTime(t);
+      setClockLoading(false);
+
+      // Auto-push browser time if ESP32 NTP is not synced
+      if (!t.ntpSynced && !timePushedRef.current) {
+        timePushedRef.current = true;
+        try {
+          const epoch = Math.floor(Date.now() / 1000);
+          const result = await api.setEspTime(epoch);
+          if (result.success) {
+            toast.success(`Time set from browser: ${result.time}`);
+            logSystemEvent('time_set', `Time set from browser (auto): ${result.time}`);
+            // Re-fetch to update display
+            const updated = await api.getEspTime();
+            setEspTime(updated);
+          }
+        } catch {
+          // Browser push also failed
+        }
+      }
+    } catch {
+      // ESP32 offline
+      setClockLoading(false);
+    }
+  };
+
+  const handleSyncTime = async () => {
+    setIsSyncing(true);
+    try {
+      // 1. Try NTP sync first
+      const result = await api.syncEspTime();
+      if (result.success) {
+        toast.success(`NTP synced: ${result.time || 'OK'}`);
+        logSystemEvent('ntp_sync', `NTP synced: ${result.time}`);
+        await fetchEspTime();
+      } else {
+        // 2. NTP failed — fallback to browser push
+        toast('NTP failed, pushing browser time...', { icon: '⏱️' });
+        const epoch = Math.floor(Date.now() / 1000);
+        const pushResult = await api.setEspTime(epoch);
+        if (pushResult.success) {
+          toast.success(`Time set from browser: ${pushResult.time}`);
+          logSystemEvent('time_set', `Time set from browser (manual): ${pushResult.time}`);
+          await fetchEspTime();
+        } else {
+          toast.error('Failed to set time');
+        }
+      }
+    } catch {
+      // Last resort: try browser push
+      try {
+        const epoch = Math.floor(Date.now() / 1000);
+        const pushResult = await api.setEspTime(epoch);
+        if (pushResult.success) {
+          toast.success(`Time set from browser: ${pushResult.time}`);
+          logSystemEvent('time_set', `Time set from browser (fallback): ${pushResult.time}`);
+          await fetchEspTime();
+        } else {
+          toast.error('Failed to sync ESP32 time');
+        }
+      } catch {
+        toast.error('Failed to sync ESP32 time');
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const fetchEvents = async () => {
+    setEventsLoading(true);
+    try {
+      const res = await fetch('/api/system-events');
+      if (res.ok) {
+        const data = await res.json();
+        setEvents(data);
+      }
+    } catch { /* ignore */ } finally {
+      setEventsLoading(false);
+    }
+  };
+
   const handleSaveUrl = () => {
     setEsp32Url(esp32Url);
     api.updateBaseUrl();
@@ -54,6 +166,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     try {
       await api.restartEsp();
       toast.success('ESP32 is restarting...');
+      logSystemEvent('esp_restart', 'ESP32 restarted from settings');
       setTimeout(() => {
         toast.success('ESP32 should be back online now');
         setIsRestarting(false);
@@ -69,6 +182,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     try {
       await api.playBuzzer('VALID_CARD');
       toast.success('Buzzer test sent');
+      logSystemEvent('buzzer_test', 'Buzzer test played');
     } catch {
       toast.error('Failed to test buzzer');
     } finally {
@@ -266,6 +380,135 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <Button onClick={handleRestartEsp} isLoading={isRestarting} variant="danger" size="sm">
                   <Power className="w-3.5 h-3.5 mr-1.5" />
                   Restart
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* ESP32 Clock */}
+          <Card variant="bordered">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Clock className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+                ESP32 Clock
+              </CardTitle>
+              <CardDescription>Real-time clock from ESP32 via NTP</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {espTime ? (
+                <>
+                  <div className="p-3 rounded-xl" style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>ESP32 Time</span>
+                      <div
+                        className="px-2 py-0.5 rounded-full text-[10px] font-medium"
+                        style={{
+                          background: espTime.ntpSynced ? 'var(--success-light)' : 'color-mix(in srgb, var(--warning) 15%, transparent)',
+                          color: espTime.ntpSynced ? 'var(--success-text)' : 'var(--warning)',
+                        }}
+                      >
+                        {espTime.ntpSynced ? 'NTP Synced' : 'Not Synced'}
+                      </div>
+                    </div>
+                    <p className="text-2xl font-bold font-mono tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                      {espTime.time}
+                    </p>
+                    <p className="text-[12px] font-mono mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                      {espTime.date}
+                    </p>
+                  </div>
+
+                  {/* Comparison with browser time */}
+                  {(() => {
+                    const browserHour = new Date().getHours();
+                    const rawDiff = Math.abs(browserHour - espTime.hour);
+                    const hourDiff = Math.min(rawDiff, 24 - rawDiff); // Handle 24h circular wrapping
+                    const isTimeMismatch = hourDiff >= 2; // Only warn if >=2h difference
+                    if (!isTimeMismatch) return null;
+                    return (
+                      <div className="flex items-start gap-2 p-2.5 rounded-xl text-[11px]"
+                        style={{ background: 'color-mix(in srgb, var(--warning) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 25%, transparent)' }}>
+                        <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
+                        <span style={{ color: 'var(--warning)' }}>
+                          ESP32 time differs from your browser by ~{hourDiff}h. Schedules use ESP32 time.
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  <Button onClick={handleSyncTime} isLoading={isSyncing} variant="secondary" size="sm" className="w-full">
+                    <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                    Sync NTP Time
+                  </Button>
+                </>
+              ) : clockLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin"
+                    style={{ borderColor: 'var(--border-strong)', borderTopColor: 'transparent' }} />
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>Unable to fetch ESP32 time</p>
+                  <Button onClick={() => { setClockLoading(true); fetchEspTime(); }} variant="secondary" size="sm" className="mt-2">
+                    Retry
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* System Event Log */}
+          <Card variant="bordered">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Terminal className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+                System Event Log
+              </CardTitle>
+              <CardDescription>Recent system events stored in database</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div
+                ref={eventLogRef}
+                className="h-48 overflow-y-auto overflow-x-hidden rounded-xl p-3 font-mono text-[11px] leading-relaxed space-y-0.5"
+                style={{
+                  background: '#0d1117',
+                  border: '1px solid var(--border)',
+                  color: '#8b949e',
+                }}
+              >
+                {eventsLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <span style={{ color: '#58a6ff' }}>Loading events...</span>
+                  </div>
+                ) : events.length === 0 ? (
+                  <div className="flex items-center justify-center h-full">
+                    <span style={{ color: '#484f58' }}>No events recorded</span>
+                  </div>
+                ) : (
+                  events.map((evt) => {
+                    const ts = new Date(evt.createdAt);
+                    const timeStr = ts.toLocaleTimeString('en-US', { hour12: false });
+                    const dateStr = ts.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+                    const typeColor = evt.eventType.includes('error') || evt.eventType.includes('denied')
+                      ? '#f85149'
+                      : evt.eventType.includes('unlock') || evt.eventType.includes('granted') || evt.eventType.includes('success')
+                      ? '#3fb950'
+                      : evt.eventType.includes('warn')
+                      ? '#d29922'
+                      : '#58a6ff';
+                    return (
+                      <div key={evt.id} className="flex gap-2 whitespace-nowrap">
+                        <span style={{ color: '#484f58' }}>{dateStr} {timeStr}</span>
+                        <span style={{ color: typeColor }}>[{evt.eventType}]</span>
+                        <span className="truncate" style={{ color: '#c9d1d9' }}>{evt.description || '—'}</span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div className="flex gap-2 mt-2">
+                <Button onClick={fetchEvents} variant="secondary" size="sm" className="flex-1 text-xs">
+                  <RefreshCw className="w-3 h-3 mr-1" /> Refresh
                 </Button>
               </div>
             </CardContent>

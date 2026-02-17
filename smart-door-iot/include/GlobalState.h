@@ -102,6 +102,7 @@ extern bool otaInProgress;
 // ============================================
 
 extern bool rfidDisabled;          // true = RFID reader ignores all cards
+extern unsigned long rfidAutoEnableTime; // millis() timestamp to auto-re-enable, 0 = no timer
 
 // ============================================
 // SCHEDULED RESTART STATE

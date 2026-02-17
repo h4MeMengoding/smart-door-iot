@@ -41,9 +41,9 @@ void setupWiFi() {
         DEBUG_PRINTLN("\n[WiFi] Connected!");
         DEBUG_PRINTF("[WiFi] IP Address: %s\n", WiFi.localIP().toString().c_str());
         
-        // Sync NTP time — use Indonesian pool first for faster sync
-        configTime(NTP_GMT_OFFSET, NTP_DAYLIGHT_OFFSET, NTP_SERVER_1, NTP_SERVER_2);
-        DEBUG_PRINTLN("[NTP] Time sync initiated (GMT+7 WIB)");
+        // Sync NTP time — use POSIX timezone (more reliable than gmtOffset)
+        configTzTime(NTP_TIMEZONE, NTP_SERVER_1, NTP_SERVER_2);
+        DEBUG_PRINTLN("[NTP] Time sync initiated (POSIX TZ: " NTP_TIMEZONE ")");
         DEBUG_PRINTF("[NTP] Servers: %s, %s\n", NTP_SERVER_1, NTP_SERVER_2);
         
         // Wait for NTP sync (up to 5s)

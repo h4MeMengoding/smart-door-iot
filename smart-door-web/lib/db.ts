@@ -191,6 +191,10 @@ export async function getAllSystemConfigs() {
 // ─── System Events ────────────────────────────────────────────
 
 export async function addSystemEvent(eventType: string, description?: string) {
+  // Also clean up events older than 3 days
+  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  await prisma.systemEvent.deleteMany({ where: { createdAt: { lt: threeDaysAgo } } }).catch(() => {});
+
   return prisma.systemEvent.create({
     data: { eventType, description },
   });

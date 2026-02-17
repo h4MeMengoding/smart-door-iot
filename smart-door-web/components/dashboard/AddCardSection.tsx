@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { CreditCard, Plus, X, Loader2 } from 'lucide-react';
 import { DoorStatus } from '@/lib/types';
 import { api } from '@/lib/api';
+import { logSystemEvent } from '@/lib/systemEvents';
 import toast from 'react-hot-toast';
 
 interface AddCardSectionProps {
@@ -23,6 +24,7 @@ export function AddCardSection({ status }: AddCardSectionProps) {
       const result = await api.toggleRegistrationMode();
       if (result.success) {
         toast.success(result.message || (isRegistrationMode ? 'Exited registration mode' : 'Entered registration mode'));
+        logSystemEvent('registration_mode', isRegistrationMode ? 'Exited registration mode' : 'Entered registration mode');
       } else {
         toast.error(result.message || 'Failed to toggle registration mode');
       }

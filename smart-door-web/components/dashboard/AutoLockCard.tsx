@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Timer, Save, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { API_KEY } from '@/lib/config';
+import { logSystemEvent } from '@/lib/systemEvents';
 import toast from 'react-hot-toast';
 
 interface AutoLockCardProps {
@@ -57,6 +58,7 @@ export function AutoLockCard({ currentDuration }: AutoLockCardProps) {
       try {
         await api.pushAutoLockDuration(duration);
         toast.success(`Auto-lock set to ${duration}s`);
+        logSystemEvent('autolock_changed', `Auto-lock duration set to ${duration}s`);
       } catch {
         toast.success(`Saved to database (${duration}s)`, { icon: '⚠️' });
         toast('ESP32 push failed — will apply on next sync', {

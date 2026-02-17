@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isMasterCardUid } from '@/lib/utils';
+import { addSystemEvent } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,6 +73,13 @@ export async function POST(request: NextRequest) {
         }),
       ]);
     }
+
+    // Log sync events
+    try {
+      if (toAdd.length > 0 || toRemove.length > 0) {
+        await addSystemEvent('card_sync', `Card sync: +${toAdd.length} added, -${toRemove.length} removed`);
+      }
+    } catch { /* non-critical */ }
 
     return NextResponse.json({
       success: true,

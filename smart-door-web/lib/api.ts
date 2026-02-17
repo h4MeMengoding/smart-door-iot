@@ -1,4 +1,4 @@
-import { DoorStatus, Card, SystemInfo, Settings, DoorConfig, CloneStatus, ScheduledRestartConfig } from './types';
+import { DoorStatus, Card, SystemInfo, Settings, DoorConfig, CloneStatus, ScheduledRestartConfig, EspTime } from './types';
 import { getApiBaseUrl, getApiKey } from './config';
 
 class ApiClient {
@@ -152,11 +152,18 @@ class ApiClient {
   }
 
   // RFID Toggle
-  async toggleRfid(): Promise<{ success: boolean; rfidDisabled: boolean; message: string }> {
+  async toggleRfid(): Promise<{ success: boolean; rfidDisabled: boolean; rfidAutoEnableMs?: number; message: string }> {
     return this.request('/api/rfid/toggle', { method: 'POST' });
   }
 
-  async getRfidStatus(): Promise<{ rfidDisabled: boolean }> {
+  async disableRfidTimed(minutes: number): Promise<{ success: boolean; rfidDisabled: boolean; rfidAutoEnableMs: number; message: string }> {
+    return this.request('/api/rfid/disable-timed', {
+      method: 'POST',
+      body: JSON.stringify({ minutes }),
+    });
+  }
+
+  async getRfidStatus(): Promise<{ rfidDisabled: boolean; rfidAutoEnableMs?: number }> {
     return this.request('/api/rfid/status');
   }
 
@@ -195,6 +202,22 @@ class ApiClient {
     return this.request('/api/config/card-schedule', {
       method: 'POST',
       body: JSON.stringify({ schedules }),
+    });
+  }
+
+  // ESP32 Time
+  async getEspTime(): Promise<EspTime> {
+    return this.request<EspTime>('/api/time');
+  }
+
+  async syncEspTime(): Promise<{ success: boolean; ntpSynced: boolean; time?: string; message?: string }> {
+    return this.request('/api/time/sync', { method: 'POST' });
+  }
+
+  async setEspTime(epoch: number): Promise<{ success: boolean; time?: string; hour?: number; message?: string }> {
+    return this.request('/api/time/set', {
+      method: 'POST',
+      body: JSON.stringify({ epoch }),
     });
   }
 }

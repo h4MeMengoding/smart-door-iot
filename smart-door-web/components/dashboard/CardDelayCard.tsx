@@ -3,18 +3,23 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Hourglass, Save, CreditCard, Maximize2, X, Clock, Users, RefreshCw, Wifi, WifiOff } from 'lucide-react';
-import { Card as CardType, CardDelayConfig, CardDelayScheduleConfig } from '@/lib/types';
+import { Hourglass, Save, CreditCard, Maximize2, X, Clock, Users, RefreshCw, Wifi, WifiOff, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Card as CardType, CardDelayConfig, CardDelayScheduleConfig, DoorStatus } from '@/lib/types';
 import { api } from '@/lib/api';
 import { API_KEY } from '@/lib/config';
 import { formatUid } from '@/lib/utils';
 import { dashboardEvents } from '@/lib/dashboardEvents';
+import { logSystemEvent } from '@/lib/systemEvents';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
-const VISIBLE_COUNT = 3;
+const VISIBLE_COUNT = 1;
 
-export function CardDelayCard() {
+interface CardDelayCardProps {
+  status?: DoorStatus | null;
+}
+
+export function CardDelayCard({ status }: CardDelayCardProps) {
   const [cards, setCards] = useState<CardType[]>([]);
   const [delays, setDelays] = useState<Record<string, number>>({});
   const [schedules, setSchedules] = useState<CardDelayScheduleConfig[]>([]);
@@ -23,6 +28,7 @@ export function CardDelayCard() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showScheduleFor, setShowScheduleFor] = useState<string | null>(null);
   const [showBulkSchedule, setShowBulkSchedule] = useState(false);
+  const [currentCardIndex, setCurrentCardIndex] = useState(0);
 
   // Schedule form state
   const [schedStartHour, setSchedStartHour] = useState(22);
@@ -31,13 +37,15 @@ export function CardDelayCard() {
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [espNtpSynced, setEspNtpSynced] = useState<boolean | null>(null);
-  const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
 
-  // Update current hour every minute
+  // Use ESP32 time from status; fall back to browser time if unavailable
+  const currentHour = status?.currentHour ?? new Date().getHours();
+  const ntpSynced = status?.ntpSynced ?? null;
+
+  // Update espNtpSynced from status
   useEffect(() => {
-    const interval = setInterval(() => setCurrentHour(new Date().getHours()), 60000);
-    return () => clearInterval(interval);
-  }, []);
+    if (ntpSynced !== null) setEspNtpSynced(ntpSynced);
+  }, [ntpSynced]);
 
   // Check if a schedule is currently active
   const isScheduleActive = useCallback((startHour: number, endHour: number) => {
@@ -108,6 +116,13 @@ export function CardDelayCard() {
     return () => { u1(); u2(); };
   }, [loadData]);
 
+  // Keep currentCardIndex within bounds
+  useEffect(() => {
+    if (cards.length > 0 && currentCardIndex >= cards.length) {
+      setCurrentCardIndex(Math.max(0, cards.length - 1));
+    }
+  }, [cards.length, currentCardIndex]);
+
   const handleDelayChange = (uid: string, value: number) => {
     setDelays((prev) => ({ ...prev, [uid]: value }));
   };
@@ -131,6 +146,7 @@ export function CardDelayCard() {
       try {
         await api.pushCardDelay(uid, delaySec);
         toast.success(`${delaySec === 0 ? 'Instant unlock' : `${delaySec}s delay`} saved`);
+        logSystemEvent('card_delay_changed', `Card ${uid} delay set to ${delaySec}s`);
       } catch {
         toast.success('Saved to database', { icon: '⚠️' });
         toast('ESP32 push failed — will apply on next sync', { icon: '📡', duration: 4000 });
@@ -159,6 +175,7 @@ export function CardDelayCard() {
       try {
         await api.pushCardSchedule(uid, schedStartHour, schedEndHour, schedDelaySec);
         toast.success(`Schedule: ${schedStartHour}:00-${schedEndHour}:00 → ${schedDelaySec}s`);
+        logSystemEvent('card_schedule_changed', `Card ${uid} schedule: ${schedStartHour}:00-${schedEndHour}:00 → ${schedDelaySec}s`);
       } catch {
         toast.success('Schedule saved to DB', { icon: '⚠️' });
         toast('ESP32 push failed — will apply on next sync', { icon: '📡', duration: 4000 });
@@ -183,6 +200,7 @@ export function CardDelayCard() {
       }
       try { await api.removeCardSchedule(uid); } catch { /* ESP32 offline */ }
       toast.success('Schedule removed');
+      logSystemEvent('card_schedule_removed', `Card ${uid} schedule removed`);
     } catch {
       toast.error('Failed to remove schedule');
     }
@@ -208,12 +226,12 @@ export function CardDelayCard() {
           uid, startHour: schedStartHour, endHour: schedEndHour, delaySec: schedDelaySec,
         }));
         await api.pushBulkCardSchedules(bulkData);
-        toast.success(`Bulk schedule applied to ${allUids.length} cards`);
+        toast.success(`Schedule ${schedStartHour.toString().padStart(2, '0')}:00-${schedEndHour.toString().padStart(2, '0')}:00 → ${schedDelaySec}s applied to ${allUids.length} cards`);
       } catch {
         toast.success('Saved to DB', { icon: '⚠️' });
         toast('ESP32 push failed', { icon: '📡', duration: 4000 });
       }
-      setShowBulkSchedule(false);
+      // Don't close — allow adding more schedules
     } catch {
       toast.error('Failed to apply bulk schedule');
     } finally {
@@ -314,6 +332,7 @@ export function CardDelayCard() {
     const isSavingThis = savingUid === uid;
     const cardSchedules = getCardSchedules(uid);
     const isScheduleOpen = showScheduleFor === uid;
+    const hasBulkSchedule = cardSchedules.length > 0;
 
     return (
       <motion.div
@@ -325,12 +344,13 @@ export function CardDelayCard() {
         className="p-3 rounded-xl"
         style={{
           background: 'var(--bg-surface-hover)',
-          border: isScheduled ? '1.5px solid var(--primary)' : '1px solid var(--border)',
+          border: hasBulkSchedule ? '1.5px solid var(--primary)' : '1px solid var(--border)',
         }}
       >
+        {/* Card header */}
         <div className="flex items-center gap-3 mb-2.5">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: isScheduled ? 'var(--primary-light)' : 'var(--primary-light)' }}>
-            {isScheduled ? <Clock className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} /> : <CreditCard className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />}
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--primary-light)' }}>
+            {hasBulkSchedule ? <Clock className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} /> : <CreditCard className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
@@ -344,135 +364,155 @@ export function CardDelayCard() {
             <div
               className="px-2.5 py-1 rounded-full text-[11px] font-semibold tabular-nums shrink-0"
               style={{
-                background: isScheduled
+                background: hasBulkSchedule
                   ? 'color-mix(in srgb, var(--primary) 15%, transparent)'
                   : effectiveDelay > 0 ? 'color-mix(in srgb, var(--warning) 15%, transparent)' : 'var(--success-light)',
-                color: isScheduled ? 'var(--primary)' : effectiveDelay > 0 ? 'var(--warning)' : 'var(--success-text)',
+                color: hasBulkSchedule ? 'var(--primary)' : effectiveDelay > 0 ? 'var(--warning)' : 'var(--success-text)',
               }}
             >
-              {effectiveDelay === 0 ? 'Instant' : `${effectiveDelay}s`}
+              {hasBulkSchedule ? 'Bulk' : effectiveDelay === 0 ? 'Instant' : `${effectiveDelay}s`}
             </div>
+          </div>
+        </div>
+
+        {hasBulkSchedule ? (
+          /* ── Bulk schedule mode: block content, show schedule info + cancel ── */
+          <div className="rounded-lg p-2.5 space-y-2" style={{ background: 'color-mix(in srgb, var(--primary) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--primary) 20%, transparent)' }}>
             {isScheduled && activeSchedule && (
-              <span className="text-[9px] font-medium" style={{ color: 'var(--primary)' }}>
-                {activeSchedule.startHour.toString().padStart(2, '0')}:00-{activeSchedule.endHour.toString().padStart(2, '0')}:00
-              </span>
+              <div className="flex items-center gap-1.5 text-[10px] font-medium" style={{ color: 'var(--primary)' }}>
+                <Wifi className="w-3 h-3 shrink-0" />
+                <span>Active now → {activeSchedule.delaySec}s delay</span>
+              </div>
             )}
-          </div>
-        </div>
-
-        {isScheduled && (
-          <div className="flex items-center gap-1.5 px-2 py-1 mb-2 rounded-lg text-[10px]"
-            style={{ background: 'color-mix(in srgb, var(--primary) 8%, transparent)', color: 'var(--primary)' }}
-          >
-            <Clock className="w-3 h-3 shrink-0" />
-            <span>Schedule active — base delay ({staticDelay === 0 ? 'instant' : `${staticDelay}s`}) resumes at {activeSchedule!.endHour.toString().padStart(2, '0')}:00</span>
-          </div>
-        )}
-
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>0s</span>
-          <input type="range" min={0} max={30} value={isScheduled ? effectiveDelay : staticDelay}
-            onChange={(e) => !isScheduled && handleDelayChange(uid, parseInt(e.target.value))}
-            className="flex-1 min-w-0"
-            style={{
-              accentColor: isScheduled ? 'var(--primary)' : staticDelay > 0 ? 'var(--warning)' : 'var(--primary)',
-              opacity: isScheduled ? 0.6 : 1,
-            }}
-            disabled={isScheduled}
-          />
-          <span className="text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>30s</span>
-        </div>
-        {isScheduled && (
-          <p className="text-[9px] mt-0.5 text-center" style={{ color: 'var(--text-muted)' }}>
-            Slider locked during schedule — base delay: {staticDelay === 0 ? 'instant' : `${staticDelay}s`}
-          </p>
-        )}
-
-        {cardSchedules.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {cardSchedules.map((s, i) => (
-              <div key={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px]"
-                style={{ background: 'color-mix(in srgb, var(--primary) 12%, transparent)', color: 'var(--primary)' }}
-              >
-                <Clock className="w-2.5 h-2.5" />
-                {s.startHour.toString().padStart(2, '0')}:00-{s.endHour.toString().padStart(2, '0')}:00 → {s.delaySec}s
-                <button onClick={() => handleRemoveSchedule(uid, s.startHour, s.endHour)} className="ml-0.5 hover:opacity-70">
-                  <X className="w-2.5 h-2.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 mt-2">
-          <Button onClick={() => handleSave(uid)} isLoading={isSavingThis} variant="primary" size="sm" className="flex-1 text-xs">
-            <Save className="w-3 h-3 mr-1" /> Save
-          </Button>
-          <button
-            onClick={() => {
-              if (!isFullscreen) {
-                // In compact view: open fullscreen with this card's schedule open
-                setShowScheduleFor(uid);
-                setIsFullscreen(true);
-              } else {
-                setShowScheduleFor(isScheduleOpen ? null : uid);
-              }
-            }}
-            className="p-1.5 rounded-lg transition-colors"
-            style={{
-              background: isScheduleOpen ? 'var(--primary-light)' : 'var(--bg-surface)',
-              color: isScheduleOpen ? 'var(--primary)' : 'var(--text-muted)',
-              border: '1px solid var(--border)',
-            }}
-            title="Time-based schedule"
-          >
-            <Clock className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        <AnimatePresence>
-          {isScheduleOpen && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden"
-            >
-              <div className="mt-2 p-2.5 rounded-lg space-y-2" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                <p className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Time-based delay schedule</p>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>From</label>
-                    <select value={schedStartHour} onChange={(e) => setSchedStartHour(parseInt(e.target.value))}
-                      className="w-full px-2 py-1 rounded-md text-xs"
-                      style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                    >
-                      {Array.from({ length: 24 }, (_, i) => (<option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>))}
-                    </select>
-                  </div>
-                  <div className="flex-1">
-                    <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>To</label>
-                    <select value={schedEndHour} onChange={(e) => setSchedEndHour(parseInt(e.target.value))}
-                      className="w-full px-2 py-1 rounded-md text-xs"
-                      style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                    >
-                      {Array.from({ length: 24 }, (_, i) => (<option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>))}
-                    </select>
-                  </div>
-                  <div className="flex-1">
-                    <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Delay</label>
-                    <select value={schedDelaySec} onChange={(e) => setSchedDelaySec(parseInt(e.target.value))}
-                      className="w-full px-2 py-1 rounded-md text-xs"
-                      style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                    >
-                      {[1, 2, 3, 5, 7, 10, 15, 20, 30].map((s) => (<option key={s} value={s}>{s}s</option>))}
-                    </select>
-                  </div>
+            <div className="flex flex-wrap gap-1">
+              {cardSchedules.map((s, i) => (
+                <div key={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px]"
+                  style={{
+                    background: isScheduleActive(s.startHour, s.endHour)
+                      ? 'color-mix(in srgb, var(--primary) 25%, transparent)'
+                      : 'color-mix(in srgb, var(--primary) 12%, transparent)',
+                    color: 'var(--primary)',
+                    fontWeight: isScheduleActive(s.startHour, s.endHour) ? 600 : 400,
+                  }}
+                >
+                  <Clock className="w-2.5 h-2.5" />
+                  {s.startHour.toString().padStart(2, '0')}:00-{s.endHour.toString().padStart(2, '0')}:00 → {s.delaySec}s
                 </div>
-                <Button onClick={() => handleSaveSchedule(uid)} isLoading={savingSchedule} variant="primary" size="sm" className="w-full text-xs">
-                  <Clock className="w-3 h-3 mr-1" /> Save Schedule
-                </Button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              ))}
+            </div>
+            <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              Base delay: {staticDelay === 0 ? 'instant' : `${staticDelay}s`} (outside schedule)
+            </p>
+            <button
+              onClick={async () => {
+                try {
+                  const dbRes = await fetch('/api/config', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+                    body: JSON.stringify({ removeSchedule: { cardUid: uid, all: true } }),
+                  });
+                  if (dbRes.ok) {
+                    const updatedConfig = await dbRes.json();
+                    setSchedules(updatedConfig.cardSchedules || []);
+                  }
+                  try { await api.removeCardSchedule(uid); } catch { /* ESP32 offline */ }
+                  toast.success(`${card.nickname || 'Card'} set to individual delay`);
+                  logSystemEvent('card_schedule_custom', `Card ${uid} opted out of bulk schedule`);
+                } catch {
+                  toast.error('Failed to remove schedule');
+                }
+              }}
+              className="w-full py-1.5 rounded-lg text-[11px] font-semibold transition-colors flex items-center justify-center gap-1.5"
+              style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+            >
+              <X className="w-3 h-3" /> Cancel Bulk — Use Individual Delay
+            </button>
+          </div>
+        ) : (
+          /* ── Individual delay mode: slider + save + schedule button ── */
+          <>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>0s</span>
+              <input type="range" min={0} max={30} value={staticDelay}
+                onChange={(e) => handleDelayChange(uid, parseInt(e.target.value))}
+                className="flex-1 min-w-0"
+                style={{
+                  accentColor: staticDelay > 0 ? 'var(--warning)' : 'var(--primary)',
+                }}
+              />
+              <span className="text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>30s</span>
+            </div>
+
+            <div className="flex items-center gap-2 mt-2">
+              <Button onClick={() => handleSave(uid)} isLoading={isSavingThis} variant="primary" size="sm" className="flex-1 text-xs">
+                <Save className="w-3 h-3 mr-1" /> Save
+              </Button>
+              <button
+                onClick={() => {
+                  if (!isFullscreen) {
+                    setShowScheduleFor(uid);
+                    setIsFullscreen(true);
+                  } else {
+                    setShowScheduleFor(isScheduleOpen ? null : uid);
+                  }
+                }}
+                className="p-1.5 rounded-lg transition-colors"
+                style={{
+                  background: isScheduleOpen ? 'var(--primary-light)' : 'var(--bg-surface)',
+                  color: isScheduleOpen ? 'var(--primary)' : 'var(--text-muted)',
+                  border: '1px solid var(--border)',
+                }}
+                title="Time-based schedule"
+              >
+                <Clock className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <AnimatePresence>
+              {isScheduleOpen && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden"
+                >
+                  <div className="mt-2 p-2.5 rounded-lg space-y-2" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+                    <p className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Time-based delay schedule</p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>From</label>
+                        <select value={schedStartHour} onChange={(e) => setSchedStartHour(parseInt(e.target.value))}
+                          className="w-full px-2 py-1 rounded-md text-xs"
+                          style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+                        >
+                          {Array.from({ length: 24 }, (_, i) => (<option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>))}
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>To</label>
+                        <select value={schedEndHour} onChange={(e) => setSchedEndHour(parseInt(e.target.value))}
+                          className="w-full px-2 py-1 rounded-md text-xs"
+                          style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+                        >
+                          {Array.from({ length: 24 }, (_, i) => (<option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>))}
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Delay</label>
+                        <select value={schedDelaySec} onChange={(e) => setSchedDelaySec(parseInt(e.target.value))}
+                          className="w-full px-2 py-1 rounded-md text-xs"
+                          style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+                        >
+                          {[1, 2, 3, 5, 7, 10, 15, 20, 30].map((s) => (<option key={s} value={s}>{s}s</option>))}
+                        </select>
+                      </div>
+                    </div>
+                    <Button onClick={() => handleSaveSchedule(uid)} isLoading={savingSchedule} variant="primary" size="sm" className="w-full text-xs">
+                      <Clock className="w-3 h-3 mr-1" /> Save Schedule
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </>
+        )}
       </motion.div>
     );
   };
@@ -489,7 +529,7 @@ export function CardDelayCard() {
           </p>
         </div>
         <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-          Apply the same time-based delay to all registered cards. Repeats daily.
+          Add time-based delays to all cards. You can apply multiple schedules with different time ranges.
         </p>
         {activeScheduleInfo && (
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium"
@@ -538,7 +578,7 @@ export function CardDelayCard() {
         </div>
         <div className="flex gap-2">
           <Button onClick={handleBulkSchedule} isLoading={savingSchedule} variant="primary" size="sm" className="flex-1 text-xs">
-            <Users className="w-3 h-3 mr-1" /> Apply to All
+            <Users className="w-3 h-3 mr-1" /> Add Schedule
           </Button>
           <Button onClick={handleSyncToEsp} isLoading={syncing} variant="secondary" size="sm" className="text-xs"
             title="Re-sync all schedules from database to ESP32"
@@ -556,6 +596,36 @@ export function CardDelayCard() {
             Cancel
           </Button>
         </div>
+        {/* Show unique applied schedules */}
+        {(() => {
+          const uniqueSchedules = new Map<string, { startHour: number; endHour: number; delaySec: number; count: number }>();
+          schedules.forEach((s) => {
+            const key = `${s.startHour}-${s.endHour}-${s.delaySec}`;
+            const existing = uniqueSchedules.get(key);
+            if (existing) {
+              existing.count++;
+            } else {
+              uniqueSchedules.set(key, { startHour: s.startHour, endHour: s.endHour, delaySec: s.delaySec, count: 1 });
+            }
+          });
+          if (uniqueSchedules.size === 0) return null;
+          return (
+            <div className="space-y-1">
+              <p className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Applied schedules:</p>
+              <div className="flex flex-wrap gap-1">
+                {Array.from(uniqueSchedules.values()).map((s, i) => (
+                  <div key={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px]"
+                    style={{ background: 'color-mix(in srgb, var(--primary) 12%, transparent)', color: 'var(--primary)' }}
+                  >
+                    <Clock className="w-2.5 h-2.5" />
+                    {s.startHour.toString().padStart(2, '0')}:00-{s.endHour.toString().padStart(2, '0')}:00 → {s.delaySec}s
+                    <span className="text-[9px] opacity-70">({s.count}/{cards.length} cards)</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </motion.div>
   );
@@ -576,7 +646,7 @@ export function CardDelayCard() {
           <div className="flex items-center gap-2">
             <Hourglass className="w-4 h-4" style={{ color: 'var(--primary)' }} />
             <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Card Unlock Delays ({cards.length})
+              Card Unlock Delays
             </h2>
           </div>
           <div className="flex items-center gap-2">
@@ -624,7 +694,7 @@ export function CardDelayCard() {
               <CardTitle>Card Unlock Delay</CardTitle>
               <CardDescription>Response time after scan</CardDescription>
             </div>
-            {cards.length > VISIBLE_COUNT && (
+            {cards.length > 1 && (
               <button onClick={() => setIsFullscreen(true)} className="p-1.5 rounded-lg transition-colors"
                 style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
                 title="View all cards"
@@ -662,23 +732,34 @@ export function CardDelayCard() {
                 </div>
               )}
               {cards.length > 1 && (
-                <div className="flex items-center gap-2 mb-1">
-                  <button onClick={() => { setShowBulkSchedule(true); setIsFullscreen(true); }}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors"
-                    style={{
-                      background: 'var(--bg-surface-hover)',
-                      color: 'var(--text-muted)',
-                      border: '1px solid var(--border)',
-                    }}
-                  >
-                    <Users className="w-3 h-3" /> Bulk Schedule
-                  </button>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setCurrentCardIndex((prev) => Math.max(0, prev - 1))}
+                      disabled={currentCardIndex === 0}
+                      className="p-1 rounded-lg transition-colors disabled:opacity-30"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="text-[11px] font-medium tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                      {currentCardIndex + 1} / {cards.length}
+                    </span>
+                    <button
+                      onClick={() => setCurrentCardIndex((prev) => Math.min(cards.length - 1, prev + 1))}
+                      disabled={currentCardIndex >= cards.length - 1}
+                      className="p-1 rounded-lg transition-colors disabled:opacity-30"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               )}
               <AnimatePresence mode="popLayout">
-                {cards.slice(0, VISIBLE_COUNT).map((card, index) => renderCardItem(card, index))}
+                {cards.slice(currentCardIndex, currentCardIndex + VISIBLE_COUNT).map((card, index) => renderCardItem(card, currentCardIndex + index))}
               </AnimatePresence>
-              {cards.length > VISIBLE_COUNT && (
+              {cards.length > 1 && (
                 <button onClick={() => setIsFullscreen(true)}
                   className="w-full py-2 rounded-xl text-[12px] font-medium transition-colors flex items-center justify-center gap-1.5"
                   style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
