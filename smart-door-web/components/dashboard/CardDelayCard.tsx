@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/Button';
 import { Hourglass, Save, CreditCard, Maximize2, X, Clock, Users, RefreshCw, Wifi, WifiOff, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card as CardType, CardDelayConfig, CardDelayScheduleConfig, DoorStatus } from '@/lib/types';
 import { api } from '@/lib/api';
-import { API_KEY } from '@/lib/config';
 import { formatUid } from '@/lib/utils';
 import { dashboardEvents } from '@/lib/dashboardEvents';
 import { logSystemEvent } from '@/lib/systemEvents';
@@ -138,7 +137,7 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
     try {
       const dbRes = await fetch('/api/config', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cardDelay: { cardUid: uid, delaySec } }),
       });
       if (!dbRes.ok) throw new Error('Failed to save');
@@ -163,7 +162,7 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
     try {
       const dbRes = await fetch('/api/config', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cardSchedule: { cardUid: uid, startHour: schedStartHour, endHour: schedEndHour, delaySec: schedDelaySec },
         }),
@@ -191,7 +190,7 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
     try {
       const dbRes = await fetch('/api/config', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ removeSchedule: { cardUid: uid, startHour, endHour } }),
       });
       if (dbRes.ok) {
@@ -212,7 +211,7 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
       const allUids = cards.map((c) => c.uid);
       const dbRes = await fetch('/api/config', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           bulkSchedule: { cardUids: allUids, startHour: schedStartHour, endHour: schedEndHour, delaySec: schedDelaySec },
         }),
@@ -247,7 +246,7 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
       for (const uid of allUids) {
         await fetch('/api/config', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ removeSchedule: { cardUid: uid, all: true } }),
         });
       }
@@ -408,7 +407,7 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
                 try {
                   const dbRes = await fetch('/api/config', {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ removeSchedule: { cardUid: uid, all: true } }),
                   });
                   if (dbRes.ok) {

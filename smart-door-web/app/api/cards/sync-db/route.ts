@@ -13,9 +13,19 @@ export const dynamic = 'force-dynamic';
  * Body: { cards: string[] } - Array of card UIDs currently on ESP32
  */
 export async function POST(request: NextRequest) {
+  // Parse body once upfront so it's available for retry
+  let parsedBody: { cards?: string[] };
   try {
-    const body = await request.json();
-    const { cards: espCards } = body as { cards: string[] };
+    parsedBody = await request.json();
+  } catch {
+    return NextResponse.json(
+      { success: false, message: 'Invalid JSON body' },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const { cards: espCards } = parsedBody as { cards: string[] };
 
     if (!Array.isArray(espCards)) {
       return NextResponse.json(
@@ -101,9 +111,8 @@ export async function POST(request: NextRequest) {
       try {
         // Wait 1s for Neon to wake up, then retry the whole sync
         await new Promise(r => setTimeout(r, 1000));
-        const retryBody = await request.clone().json().catch(() => null);
-        if (retryBody?.cards) {
-          const validCards = (retryBody.cards as string[]).filter((uid: string) => uid && !isMasterCardUid(uid));
+        if (parsedBody?.cards) {
+          const validCards = (parsedBody.cards as string[]).filter((uid: string) => uid && !isMasterCardUid(uid));
           const dbCards = await prisma.accessCredential.findMany({
             where: { uid: { not: null } },
             select: { uid: true },

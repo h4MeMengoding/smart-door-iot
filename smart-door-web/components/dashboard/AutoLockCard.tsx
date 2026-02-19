@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/Button';
 import { Timer, Save, AlertTriangle } from 'lucide-react';
 import { api } from '@/lib/api';
-import { API_KEY } from '@/lib/config';
 import { logSystemEvent } from '@/lib/systemEvents';
 import toast from 'react-hot-toast';
 
@@ -45,10 +44,10 @@ export function AutoLockCard({ currentDuration }: AutoLockCardProps) {
 
     setIsSaving(true);
     try {
-      // 1. Save to database
+      // 1. Save to database (session cookie auth handled automatically)
       const dbRes = await fetch('/api/config', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ autoLockDuration: duration }),
       });
 
