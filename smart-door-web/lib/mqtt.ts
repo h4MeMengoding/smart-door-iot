@@ -66,8 +66,8 @@ function waitForSubscription(): Promise<void> {
   if (subscribed) return Promise.resolve();
   return new Promise<void>((resolve) => {
     subscribedResolvers.push(resolve);
-    // Safety timeout — don't block forever
-    setTimeout(() => resolve(), 8000);
+    // Safety timeout — don't block forever (Vercel has 10s limit)
+    setTimeout(() => resolve(), 4000);
   });
 }
 
@@ -100,7 +100,7 @@ function getClient(): mqtt.MqttClient {
     protocolVersion: 4,       // MQTT 3.1.1 — more compatible with EMQX Cloud
     clean: true,
     reconnectPeriod: 5000,
-    connectTimeout: 10000,
+    connectTimeout: 6000,      // 6s — must fit within Vercel 10s limit
     keepalive: 60,
     will: {
       topic: 'smartdoor/web/availability',
@@ -236,7 +236,7 @@ export async function sendCommand(
   // Wait for connection if not yet connected
   if (!mqttClient.connected) {
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('MQTT connection timeout')), 5000);
+      const timer = setTimeout(() => reject(new Error('MQTT connection timeout')), 3000);
       mqttClient.once('connect', () => {
         clearTimeout(timer);
         resolve();

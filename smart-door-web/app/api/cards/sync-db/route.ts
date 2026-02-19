@@ -87,11 +87,51 @@ export async function POST(request: NextRequest) {
       removed: toRemove.length,
       total: validCards.length,
     });
-  } catch (error) {
+  } catch (error: unknown) {
+    // Retry once on Neon cold-start / connection pool timeout
+    const isConnectionError = error instanceof Error && (
+      error.message.includes('connect') ||
+      error.message.includes('timeout') ||
+      error.message.includes('pool') ||
+      error.message.includes('ECONNREFUSED')
+    );
+
+    if (isConnectionError) {
+      console.warn('DB sync retry after connection error:', (error as Error).message);
+      try {
+        // Wait 1s for Neon to wake up, then retry the whole sync
+        await new Promise(r => setTimeout(r, 1000));
+        const retryBody = await request.clone().json().catch(() => null);
+        if (retryBody?.cards) {
+          const validCards = (retryBody.cards as string[]).filter((uid: string) => uid && !isMasterCardUid(uid));
+          const dbCards = await prisma.accessCredential.findMany({
+            where: { uid: { not: null } },
+            select: { uid: true },
+          });
+          const dbUids = new Set(dbCards.map((c) => c.uid!.toUpperCase()));
+          const toAdd = validCards.filter((uid: string) => !dbUids.has(uid.toUpperCase()));
+          if (toAdd.length > 0) {
+            await prisma.$transaction(
+              toAdd.map((uid: string) =>
+                prisma.accessCredential.upsert({
+                  where: { uid: uid.toUpperCase() },
+                  update: {},
+                  create: { uid: uid.toUpperCase(), displayName: 'Unknown User', isNamed: false },
+                })
+              )
+            );
+          }
+          return NextResponse.json({ success: true, added: toAdd.length, removed: 0, total: validCards.length, retried: true });
+        }
+      } catch (retryErr) {
+        console.error('DB sync retry also failed:', retryErr);
+      }
+    }
+
     console.error('DB sync error:', error);
     return NextResponse.json(
-      { success: false, message: 'Internal server error' },
-      { status: 500 }
+      { success: false, message: 'Database temporarily unavailable, will retry on next sync' },
+      { status: 503 }
     );
   }
 }

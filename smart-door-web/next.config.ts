@@ -2,17 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
-  // Disable HTTP caching for API routes — always serve fresh data
-  headers: async () => [
-    {
-      source: '/api/:path*',
-      headers: [
-        { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate' },
-        { key: 'Pragma', value: 'no-cache' },
-        { key: 'Expires', value: '0' },
-      ],
-    },
-  ],
+  // Note: all API routes use `dynamic = 'force-dynamic'` which prevents static output.
+  // Routes that need CDN caching (health/db, docs) set their own Cache-Control headers.
+  // MQTT routes (/api/esp, /api/door) may need extra time on cold start.
 };
 
 export default nextConfig;

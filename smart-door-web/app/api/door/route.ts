@@ -45,7 +45,18 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // No cache — request status from ESP32
+  // On cold start: MQTT not connected yet → return offline immediately
+  // Don't wait 5+s for MQTT connect+subscribe → prevents Vercel timeout
+  if (!isDeviceOnline()) {
+    return NextResponse.json({
+      success: false,
+      message: 'MQTT connecting, device status pending',
+      deviceOnline: false,
+      source: 'cold_start',
+    });
+  }
+
+  // No cache but MQTT connected — request status from ESP32
   try {
     const response = await sendCommand(TOPICS.CMD_DOOR, { action: 'status' }, 5000);
     return NextResponse.json({ ...response, deviceOnline: isDeviceOnline() });
@@ -54,7 +65,8 @@ export async function GET(request: NextRequest) {
       success: false,
       message: 'Device offline or not responding',
       deviceOnline: false,
-    }, { status: 503 });
+      source: 'timeout',
+    });
   }
 }
 
@@ -74,13 +86,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (!isDeviceOnline()) {
-      return NextResponse.json({ success: false, message: 'Device offline' }, { status: 503 });
+      return NextResponse.json({ success: false, message: 'Device offline', deviceOnline: false });
     }
 
     const response = await sendCommand(TOPICS.CMD_DOOR, { action }, 10000);
     return NextResponse.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Command failed';
-    return NextResponse.json({ success: false, message }, { status: 500 });
+    return NextResponse.json({ success: false, message, deviceOnline: false });
   }
 }

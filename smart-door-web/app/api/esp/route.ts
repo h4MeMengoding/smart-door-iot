@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const command = searchParams.get('command') || 'door.status';
   
-  // For read-only queries, try cached data first
+  // For read-only queries, try cached data first (avoids MQTT round-trip)
   if (command === 'door.status') {
     const cached = getCachedStatus();
     if (cached) {
@@ -79,6 +79,16 @@ export async function GET(request: NextRequest) {
         ...cached, 
         deviceOnline: isDeviceOnline(),
         source: 'mqtt_cache' 
+      });
+    }
+    // On cold start: MQTT not connected yet → return offline immediately
+    // Don't wait 10+s for MQTT connect+subscribe → prevents Vercel timeout
+    if (!isDeviceOnline()) {
+      return NextResponse.json({
+        success: false,
+        message: 'MQTT connecting, device status pending',
+        deviceOnline: false,
+        source: 'cold_start',
       });
     }
   }
@@ -91,6 +101,15 @@ export async function GET(request: NextRequest) {
         ...cached, 
         deviceOnline: isDeviceOnline(),
         source: 'mqtt_cache' 
+      });
+    }
+    // Same cold-start optimization for system.info
+    if (!isDeviceOnline()) {
+      return NextResponse.json({
+        success: false,
+        message: 'MQTT connecting, system info pending',
+        deviceOnline: false,
+        source: 'cold_start',
       });
     }
   }

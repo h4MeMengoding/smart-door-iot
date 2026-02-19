@@ -48,20 +48,14 @@ export async function POST(request: NextRequest) {
         accessResult,
         createdAt: { gt: recentCutoff },
       },
-      orderBy: { createdAt: 'desc' },
+      select: { id: true },
     });
 
     if (duplicate) {
       return NextResponse.json({ success: true, log: { id: duplicate.id, deduplicated: true } });
     }
 
-    const log = await addAccessLog({
-      uid,
-      accessType,
-      accessResult,
-    });
-
-    // Get card info for nickname (only for RFID with valid uid)
+    // Combined: upsert card + create log in parallel where possible
     let cardNickname: string | undefined;
     let displayName: string;
 
@@ -69,12 +63,20 @@ export async function POST(request: NextRequest) {
       displayName = 'Web';
     } else if (accessType === 'TOUCH') {
       displayName = 'Touch Sensor';
-    } else if (uid) {
-      const card = await getCardByUid(uid);
-      cardNickname = card?.isNamed ? card.displayName : undefined;
-      displayName = cardNickname || uid;
     } else {
-      displayName = 'Unknown';
+      displayName = uid || 'Unknown';
+    }
+
+    // For RFID: upsert card first (needed by addAccessLog), then create log
+    const log = await addAccessLog({ uid, accessType, accessResult });
+
+    // Fetch card nickname only for RFID with uid — reuse from the upsert if possible
+    if (uid && accessType === 'RFID') {
+      const card = await getCardByUid(uid);
+      if (card?.isNamed) {
+        cardNickname = card.displayName;
+        displayName = card.displayName;
+      }
     }
 
     const mappedLog = {
@@ -90,12 +92,10 @@ export async function POST(request: NextRequest) {
     // Emit ke semua SSE clients
     logEvents.emit(mappedLog);
 
-    // Auto-create system event from access log
-    try {
-      const evtType = accessResult === 'granted' ? 'access_granted' : 'access_denied';
-      const evtDesc = `${accessType} ${accessResult}: ${displayName}`;
-      await addSystemEvent(evtType, evtDesc);
-    } catch { /* non-critical */ }
+    // Auto-create system event — fire-and-forget (non-blocking)
+    const evtType = accessResult === 'granted' ? 'access_granted' : 'access_denied';
+    const evtDesc = `${accessType} ${accessResult}: ${displayName}`;
+    addSystemEvent(evtType, evtDesc).catch(() => {});
 
     return NextResponse.json({ success: true, log: mappedLog });
   } catch (error) {

@@ -190,10 +190,17 @@ export async function getAllSystemConfigs() {
 
 // ─── System Events ────────────────────────────────────────────
 
+// Throttle cleanup: only delete old events once per hour, not on every insert
+let lastCleanupTime = 0;
+
 export async function addSystemEvent(eventType: string, description?: string) {
-  // Also clean up events older than 3 days
-  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-  await prisma.systemEvent.deleteMany({ where: { createdAt: { lt: threeDaysAgo } } }).catch(() => {});
+  const now = Date.now();
+  // Clean up events older than 3 days — but at most once per hour
+  if (now - lastCleanupTime > 3_600_000) {
+    lastCleanupTime = now;
+    const threeDaysAgo = new Date(now - 3 * 24 * 60 * 60 * 1000);
+    prisma.systemEvent.deleteMany({ where: { createdAt: { lt: threeDaysAgo } } }).catch(() => {});
+  }
 
   return prisma.systemEvent.create({
     data: { eventType, description },
