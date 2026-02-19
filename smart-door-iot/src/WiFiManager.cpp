@@ -11,9 +11,38 @@
 // WIFI & WEB SERVER
 // ============================================
 
+// WiFi reconnect tracking
+static unsigned long lastWiFiReconnectAttempt = 0;
+static bool webServerNeedsRestart = false;
+static unsigned long webServerRestartTime = 0;
+static bool wifiWasConnected = false;
+
 void setupWiFi() {
     DEBUG_PRINTLN("\n[WiFi] Connecting to WiFi...");
     DEBUG_PRINTF("[WiFi] SSID: %s\n", WIFI_SSID);
+    
+    // Set WiFi mode and enable auto-reconnect
+    WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
+    WiFi.persistent(true);
+    
+    // Register WiFi event handlers for robust reconnection
+    WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+        DEBUG_PRINTLN("[WiFi] EVENT: Disconnected from AP");
+        wifiConnected = false;
+        lastEvent = "WiFi disconnected";
+    }, WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+    
+    WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+        wifiConnected = true;
+        wifiWasConnected = true;
+        DEBUG_PRINTF("[WiFi] EVENT: Got IP - %s\n", WiFi.localIP().toString().c_str());
+        lastEvent = "WiFi reconnected";
+        
+        // Schedule web server restart (don't do it in event callback — not safe)
+        webServerNeedsRestart = true;
+        webServerRestartTime = millis() + WIFI_SERVER_RESTART_DELAY;
+    }, WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_GOT_IP);
     
     // Configure static IP
     if (!WiFi.config(STATIC_IP_ADDR, GATEWAY_ADDR, SUBNET_MASK)) {
@@ -38,6 +67,8 @@ void setupWiFi() {
     
     if (WiFi.status() == WL_CONNECTED) {
         wifiConnected = true;
+        wifiWasConnected = true;
+        webServerNeedsRestart = false;  // Initial setup will call server.begin()
         DEBUG_PRINTLN("\n[WiFi] Connected!");
         DEBUG_PRINTF("[WiFi] IP Address: %s\n", WiFi.localIP().toString().c_str());
         
@@ -235,4 +266,67 @@ void setupWebServer() {
     DEBUG_PRINTLN("[API] REST API endpoints ready");
     DEBUG_PRINTLN("[WebSocket] WebSocket ready on port 80");
     DEBUG_PRINTLN("[INFO] Use external Next.js web dashboard for monitoring & control");
+}
+
+// ============================================
+// WIFI RECONNECT & WEB SERVER RECOVERY
+// ============================================
+
+void restartWebServices() {
+    DEBUG_PRINTLN("[WEB] Restarting web server after WiFi reconnect...");
+    
+    // Close all WebSocket clients (stale connections)
+    extern AsyncWebSocket ws;
+    ws.closeAll();
+    
+    // End and re-begin the server to rebind TCP listeners
+    server.end();
+    delay(100);
+    server.begin();
+    
+    DEBUG_PRINTLN("[WEB] Web server restarted successfully");
+    DEBUG_PRINTF("[WEB] Dashboard: http://%s\n", WiFi.localIP().toString().c_str());
+    
+    // Re-sync NTP after reconnect
+    configTzTime(NTP_TIMEZONE, NTP_SERVER_1, NTP_SERVER_2);
+    DEBUG_PRINTLN("[NTP] Time re-sync initiated after WiFi reconnect");
+}
+
+void checkWiFi() {
+    unsigned long now = millis();
+    
+    // Handle scheduled web server restart (triggered by WiFi event)
+    if (webServerNeedsRestart && now >= webServerRestartTime) {
+        webServerNeedsRestart = false;
+        restartWebServices();
+        
+        // Re-initialize OTA after reconnect
+        ArduinoOTA.begin();
+        DEBUG_PRINTLN("[OTA] OTA re-initialized after WiFi reconnect");
+    }
+    
+    // If WiFi is connected, nothing else to do
+    if (WiFi.status() == WL_CONNECTED) {
+        return;
+    }
+    
+    // WiFi is disconnected — attempt periodic reconnect
+    wifiConnected = false;
+    
+    if (now - lastWiFiReconnectAttempt >= WIFI_RECONNECT_INTERVAL) {
+        lastWiFiReconnectAttempt = now;
+        
+        DEBUG_PRINTLN("[WiFi] Connection lost, attempting reconnect...");
+        
+        // Re-apply static IP config before reconnecting
+        if (!WiFi.config(STATIC_IP_ADDR, GATEWAY_ADDR, SUBNET_MASK)) {
+            DEBUG_PRINTLN("[WiFi] WARNING: Failed to reconfigure static IP");
+        }
+        
+        WiFi.disconnect(false);  // Disconnect without erasing config
+        delay(100);
+        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        
+        DEBUG_PRINTLN("[WiFi] Reconnect initiated, waiting for event callback...");
+    }
 }

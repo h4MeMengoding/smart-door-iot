@@ -89,6 +89,8 @@ const byte MASTER_CARDS[MAX_MASTER_CARDS][8] = {
 #define SUBNET_MASK         IPAddress(255, 255, 255, 0)
 
 #define WIFI_CONNECT_TIMEOUT 10000      // 10 seconds WiFi connection timeout
+#define WIFI_RECONNECT_INTERVAL 10000   // 10 seconds between reconnect attempts
+#define WIFI_SERVER_RESTART_DELAY 1000  // 1 second delay before restarting web server after reconnect
 #define WEB_SERVER_PORT      80
 
 // ============================================

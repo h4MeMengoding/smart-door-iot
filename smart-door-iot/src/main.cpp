@@ -144,6 +144,9 @@ void loop() {
         return;
     }
     
+    // Check WiFi connection & handle reconnect + web server recovery
+    checkWiFi();
+    
     // Yield dulu untuk WiFi/AsyncWebServer background tasks
     yield();
     
