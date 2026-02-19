@@ -6,9 +6,12 @@
 // 2. Forwards firmware binary as multipart upload
 
 import { NextRequest, NextResponse } from 'next/server';
-import { ESP32_OTA_URL, ESP32_OTA_PASSWORD } from '@/lib/config';
 
+export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
+
+const ESP32_OTA_URL = process.env.ESP32_OTA_URL || 'https://esp.ilhame.id/ota';
+const ESP32_OTA_PASSWORD = process.env.ESP32_OTA_PASSWORD || '';
 
 export async function POST(request: NextRequest) {
   try {

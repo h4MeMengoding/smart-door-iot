@@ -104,9 +104,14 @@ export async function GET(request: NextRequest) {
   try {
     const response = await sendCommand(mapping.topic, { action: mapping.action }, 10000);
     return NextResponse.json({ ...response, deviceOnline: isDeviceOnline() });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Command failed';
-    return NextResponse.json({ success: false, message, deviceOnline: false }, { status: 503 });
+  } catch {
+    // Return graceful degradation instead of 503 — dashboard handles offline state
+    return NextResponse.json({ 
+      success: false, 
+      message: 'Device not responding', 
+      deviceOnline: false,
+      source: 'timeout' 
+    });
   }
 }
 
@@ -139,6 +144,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ...response, deviceOnline: isDeviceOnline() });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Command failed';
-    return NextResponse.json({ success: false, message, deviceOnline: isDeviceOnline() }, { status: 500 });
+    // Return 200 with success:false for MQTT timeouts — dashboard handles gracefully
+    // Only real errors (bad request) get error status codes
+    return NextResponse.json({ success: false, message, deviceOnline: isDeviceOnline() });
   }
 }

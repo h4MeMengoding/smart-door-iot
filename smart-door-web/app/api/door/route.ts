@@ -22,7 +22,7 @@ async function verifyAuth(request: NextRequest): Promise<boolean> {
   // Check session cookie (for dashboard) — full HMAC verification
   const sessionCookie = request.cookies.get('smart-door-session');
   if (sessionCookie?.value) {
-    return verifySessionCookie(sessionCookie.value);
+    return await verifySessionCookie(sessionCookie.value);
   }
 
   return false;

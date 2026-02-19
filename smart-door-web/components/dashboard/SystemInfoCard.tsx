@@ -78,7 +78,7 @@ export function SystemInfoCard({ uptimeRaw, isConnected = false, sysInfo = null 
 
   useEffect(() => {
     checkDbHealth();
-    const id = setInterval(checkDbHealth, 30000);
+    const id = setInterval(checkDbHealth, 60000);
     return () => clearInterval(id);
   }, [checkDbHealth]);
 

@@ -1,5 +1,4 @@
 import { cookies } from 'next/headers';
-import crypto from 'crypto';
 
 // ─── Constants ────────────────────────────────────────────────
 const SESSION_COOKIE = 'smart-door-session';
@@ -20,8 +19,44 @@ if (process.env.NODE_ENV !== 'production') {
   globalForAuth.loginAttempts = loginAttempts;
 }
 
+// ─── Web Crypto Helpers (Edge-compatible) ─────────────────────
+
+const encoder = new TextEncoder();
+
+async function sha256Hex(data: string): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', encoder.encode(data));
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function hmacSign(payload: string, secret: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
+  return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+function randomHex(bytes: number): string {
+  const arr = new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // ─── PIN Verification ────────────────────────────────────────
-export function verifyPin(pin: string): boolean {
+export async function verifyPin(pin: string): Promise<boolean> {
   const expectedHash = process.env.DASHBOARD_PIN_HASH;
   const salt = process.env.DASHBOARD_PIN_SALT || 'smart-door-salt-v1';
 
@@ -35,20 +70,9 @@ export function verifyPin(pin: string): boolean {
     return false;
   }
 
-  const inputHash = crypto
-    .createHash('sha256')
-    .update(pin + salt)
-    .digest('hex');
+  const inputHash = await sha256Hex(pin + salt);
 
-  // Timing-safe comparison to prevent timing attacks
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(inputHash, 'hex'),
-      Buffer.from(expectedHash, 'hex')
-    );
-  } catch {
-    return false;
-  }
+  return constantTimeEqual(inputHash, expectedHash);
 }
 
 // ─── Rate Limiting ───────────────────────────────────────────
@@ -100,20 +124,14 @@ export function clearAttempts(ip: string): void {
 }
 
 // ─── Session Management ──────────────────────────────────────
-function signSession(payload: string): string {
-  const secret = process.env.AUTH_SESSION_SECRET;
-  if (!secret) throw new Error('AUTH_SESSION_SECRET environment variable is required');
-  return crypto
-    .createHmac('sha256', secret)
-    .update(payload)
-    .digest('hex');
-}
 
 export async function createSession(ip: string): Promise<string> {
   // Token format: randomHex:timestamp — timestamp enables expiry check without server state
-  const random = crypto.randomBytes(32).toString('hex');
+  const random = randomHex(32);
   const token = `${random}:${Date.now()}`;
-  const signature = signSession(token);
+  const secret = process.env.AUTH_SESSION_SECRET;
+  if (!secret) throw new Error('AUTH_SESSION_SECRET environment variable is required');
+  const signature = await hmacSign(token, secret);
   const sessionId = `${token}.${signature}`;
 
   // Set cookie — 30 day maxAge
@@ -144,22 +162,20 @@ export async function validateSession(): Promise<boolean> {
 
 /**
  * Verify a session cookie value (token.signature) without reading from cookie store.
- * Useful for API routes that need to verify auth from a raw cookie string.
+ * Uses Web Crypto API — Edge Runtime compatible.
  */
-export function verifySessionCookie(cookieValue: string): boolean {
+export async function verifySessionCookie(cookieValue: string): Promise<boolean> {
   try {
     const parts = cookieValue.split('.');
     if (parts.length !== 2) return false;
 
     const [token, signature] = parts;
+    const secret = process.env.AUTH_SESSION_SECRET || '';
+    if (!secret) return false;
 
-    // Verify HMAC signature
-    const expectedSignature = signSession(token);
-    const sigMatch = crypto.timingSafeEqual(
-      Buffer.from(signature, 'hex'),
-      Buffer.from(expectedSignature, 'hex')
-    );
-    if (!sigMatch) return false;
+    // Verify HMAC signature using Web Crypto API
+    const expectedSignature = await hmacSign(token, secret);
+    if (!constantTimeEqual(signature, expectedSignature)) return false;
 
     // Check expiry from embedded timestamp
     const colonIdx = token.lastIndexOf(':');

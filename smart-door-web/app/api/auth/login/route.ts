@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyPin, checkRateLimit, recordFailedAttempt, clearAttempts, createSession } from '@/lib/auth';
 
+export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify PIN
-    if (!verifyPin(pin)) {
+    if (!await verifyPin(pin)) {
       const result = recordFailedAttempt(ip);
 
       if (result.remainingAttempts === 0) {

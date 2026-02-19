@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     const apiKey = request.headers.get('x-api-key');
     const hasApiKey = validateApiKey(apiKey);
     const sessionCookie = request.cookies.get('smart-door-session');
-    const hasSession = sessionCookie?.value ? verifySessionCookie(sessionCookie.value) : false;
+    const hasSession = sessionCookie?.value ? await verifySessionCookie(sessionCookie.value) : false;
 
     if (!hasApiKey && !hasSession) {
       return NextResponse.json(
