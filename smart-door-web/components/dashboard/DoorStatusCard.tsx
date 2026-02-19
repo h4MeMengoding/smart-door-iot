@@ -19,11 +19,22 @@ export function DoorStatusCard({ status, isLoading, apiError, countdown, autoLoc
     return (
       <Card className="h-full">
         <CardContent>
-          <div className="h-48 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-10 h-10 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--border-strong)', borderTopColor: 'transparent' }} />
-              <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Loading status...</span>
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="h-3 w-24 mb-3 rounded-lg animate-pulse" style={{ background: 'var(--bg-elevated)' }} />
+              <div className="h-9 w-36 mb-5 rounded-lg animate-pulse" style={{ background: 'var(--bg-elevated)' }} />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="h-3 w-24 rounded-lg animate-pulse" style={{ background: 'var(--bg-elevated)' }} />
+                  <div className="h-5 w-12 rounded-full animate-pulse" style={{ background: 'var(--bg-elevated)' }} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="h-3 w-28 rounded-lg animate-pulse" style={{ background: 'var(--bg-elevated)' }} />
+                  <div className="h-3 w-10 rounded-lg animate-pulse" style={{ background: 'var(--bg-elevated)' }} />
+                </div>
+              </div>
             </div>
+            <div className="w-16 h-16 rounded-2xl ml-4 shrink-0 animate-pulse" style={{ background: 'var(--bg-elevated)' }} />
           </div>
         </CardContent>
       </Card>

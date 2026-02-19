@@ -1,51 +1,40 @@
-// Default ESP32 configuration
-export const DEFAULT_ESP32_URL = process.env.NEXT_PUBLIC_ESP32_URL || 'https://esp.ilhame.id';
+// ============================================
+// Configuration — MQTT Mode
+// ============================================
 
-// API key — only from environment variable, not configurable from UI
-export const API_KEY = process.env.NEXT_PUBLIC_DEFAULT_API_KEY || 'Ayamgeprek102938';
+// API key — shared secret for authentication
+export const API_KEY = process.env.NEXT_PUBLIC_DEFAULT_API_KEY || process.env.ESP32_API_KEY || '';
 
-// Get ESP32 URL from localStorage or use default
-export function getEsp32Url(): string {
-  if (typeof window === 'undefined') return DEFAULT_ESP32_URL;
-  const stored = localStorage.getItem('esp32_url');
-  return stored || DEFAULT_ESP32_URL;
-}
+// MQTT configuration
+export const MQTT_CONFIG = {
+  // Server-side MQTT (MQTTS)
+  brokerUrl: process.env.MQTT_BROKER_URL || 'mqtts://localhost:8883',
+  username: process.env.MQTT_USERNAME || 'smartdoor-server',
+  password: process.env.MQTT_PASSWORD || '',
+  
+  // Browser-side MQTT (WSS)
+  wsUrl: process.env.NEXT_PUBLIC_MQTT_WS_URL || 'wss://localhost:8084/mqtt',
+  wsUsername: process.env.NEXT_PUBLIC_MQTT_WS_USERNAME || 'smartdoor-web',
+  wsPassword: process.env.NEXT_PUBLIC_MQTT_WS_PASSWORD || '',
+};
 
-export function setEsp32Url(url: string): void {
-  // Normalize: remove trailing slash
-  const normalized = url.replace(/\/+$/, '');
-  localStorage.setItem('esp32_url', normalized);
-}
+// ESP32 HTTP OTA config
+export const ESP32_OTA_URL = process.env.ESP32_OTA_URL || 'https://esp.ilhame.id/ota';
+export const ESP32_OTA_PASSWORD = process.env.ESP32_OTA_PASSWORD || '';
 
-// Legacy alias for backward compatibility
-export function getEsp32Ip(): string {
-  return getEsp32Url();
-}
-
-export function setEsp32Ip(url: string): void {
-  setEsp32Url(url);
-}
-
-// Get API Key — always from env, never from localStorage
+// API key getter
 export function getApiKey(): string {
   return API_KEY;
 }
 
-export function getApiBaseUrl(): string {
-  return getEsp32Url();
+// MQTT WebSocket URL for browser
+export function getMqttWsUrl(): string {
+  if (typeof window === 'undefined') return MQTT_CONFIG.wsUrl;
+  const stored = localStorage.getItem('mqtt_ws_url');
+  return stored || MQTT_CONFIG.wsUrl;
 }
 
-export function getWebSocketUrl(): string {
-  const apiKey = getApiKey();
-  const espUrl = getEsp32Url();
-  
-  // Convert https:// to wss:// and http:// to ws://
-  const wsUrl = espUrl.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
-  const baseUrl = `${wsUrl}/ws`;
-  
-  if (apiKey) {
-    return `${baseUrl}?apikey=${encodeURIComponent(apiKey)}`;
-  }
-  
-  return baseUrl;
+export function setMqttWsUrl(url: string): void {
+  localStorage.setItem('mqtt_ws_url', url);
 }
+

@@ -4,7 +4,6 @@
 #include <Arduino.h>
 #include <MFRC522.h>
 #include <Preferences.h>
-#include <ESPAsyncWebServer.h>
 #include "config.h"
 
 // ============================================
@@ -13,7 +12,6 @@
 
 extern MFRC522 rfid;
 extern Preferences nvs;
-extern AsyncWebServer server;
 
 // ============================================
 // STATE MACHINE

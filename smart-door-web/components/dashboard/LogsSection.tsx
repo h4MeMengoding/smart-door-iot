@@ -1,8 +1,7 @@
 'use client';
 
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
-import { FileText, Loader2, Maximize2, Fingerprint, Globe, CreditCard, XCircle } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { FileText, Maximize2, Fingerprint, Globe, CreditCard, XCircle } from 'lucide-react';
 import { useServerLogs } from '@/hooks/useServerLogs';
 import { formatTimestamp, formatUid } from '@/lib/utils';
 import { AccessLog } from '@/lib/types';
@@ -86,11 +85,16 @@ export function LogsSection({ onExpand }: LogsSectionProps) {
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="flex flex-col items-center gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--primary)' }} />
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading logs...</p>
-            </div>
+          <div className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}>
+                <div className="w-9 h-9 rounded-xl shrink-0 animate-pulse" style={{ background: 'var(--bg-elevated)' }} />
+                <div className="flex-1">
+                  <div className="h-3.5 w-24 mb-1.5 rounded-lg animate-pulse" style={{ background: 'var(--bg-elevated)' }} />
+                  <div className="h-2.5 w-32 rounded-lg animate-pulse" style={{ background: 'var(--bg-elevated)' }} />
+                </div>
+              </div>
+            ))}
           </div>
         ) : error ? (
           <div className="text-center py-8">
@@ -109,12 +113,9 @@ export function LogsSection({ onExpand }: LogsSectionProps) {
           </div>
         ) : (
           <div className="space-y-2">
-            {displayLogs.map((log, index) => (
-              <motion.div
+            {displayLogs.map((log) => (
+              <div
                 key={log.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: index * 0.05 }}
                 className="flex items-center gap-3 p-3 rounded-xl transition-colors"
                 style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}
               >
@@ -134,7 +135,7 @@ export function LogsSection({ onExpand }: LogsSectionProps) {
                     {formatTimestamp(log.timestamp)}
                   </p>
                 </div>
-              </motion.div>
+              </div>
             ))}
             {logs.length > 3 && (
               <button

@@ -2,48 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { addAccessLog, getCardByUid, validateApiKey, addSystemEvent } from '@/lib/db';
 import { prisma } from '@/lib/prisma';
 import { logEvents } from '@/lib/events';
+import { verifySessionCookie } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
-
-// Helper: verify session cookie (for dashboard calls)
-async function hasValidSession(request: NextRequest): Promise<boolean> {
-  const cookie = request.cookies.get('smart-door-session');
-  if (!cookie?.value) return false;
-  const parts = cookie.value.split('.');
-  if (parts.length !== 2) return false;
-  const [token, signature] = parts;
-  const secret = process.env.AUTH_SESSION_SECRET || 'default-secret';
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw', encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(token));
-  const expected = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
-  if (signature.length !== expected.length) return false;
-  let result = 0;
-  for (let i = 0; i < signature.length; i++) {
-    result |= signature.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  if (result !== 0) return false;
-
-  // Check expiry from embedded timestamp
-  const colonIdx = token.lastIndexOf(':');
-  if (colonIdx === -1) return false;
-  const createdAt = parseInt(token.substring(colonIdx + 1), 10);
-  if (isNaN(createdAt)) return false;
-  const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000;
-  if (Date.now() - createdAt > SESSION_DURATION) return false;
-
-  return true;
-}
 
 // POST /api/logs - Add new access log (from ESP32 via API key, or dashboard via session)
 export async function POST(request: NextRequest) {
   try {
     const apiKey = request.headers.get('x-api-key');
     const hasApiKey = validateApiKey(apiKey);
-    const hasSession = await hasValidSession(request);
+    const sessionCookie = request.cookies.get('smart-door-session');
+    const hasSession = sessionCookie?.value ? verifySessionCookie(sessionCookie.value) : false;
 
     if (!hasApiKey && !hasSession) {
       return NextResponse.json(
@@ -68,6 +37,23 @@ export async function POST(request: NextRequest) {
 
     // For WEB/TOUCH: uid is null
     const uid = (accessType === 'WEB' || accessType === 'TOUCH') ? null : (cardUid || null);
+
+    // Deduplication: skip if an identical log exists within the last 10 seconds
+    // (prevents double entries from server-side MQTT + browser POST)
+    const recentCutoff = new Date(Date.now() - 10_000);
+    const duplicate = await prisma.accessLog.findFirst({
+      where: {
+        uid: uid,
+        accessType,
+        accessResult,
+        createdAt: { gt: recentCutoff },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (duplicate) {
+      return NextResponse.json({ success: true, log: { id: duplicate.id, deduplicated: true } });
+    }
 
     const log = await addAccessLog({
       uid,

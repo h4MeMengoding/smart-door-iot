@@ -23,9 +23,16 @@ function detectAccessSource(lastEvent: string | undefined): AccessSource {
 
 export function LastAccessCard({ status }: LastAccessCardProps) {
   const [cardsMap, setCardsMap] = useState<Record<string, string>>({});
-  const [lastEventTime, setLastEventTime] = useState<string | null>(null);
+  const [lastEventTime, setLastEventTime] = useState<string | null>(() => {
+    // Restore persisted timestamp on mount
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('lastAccessTime');
+    }
+    return null;
+  });
   const [, setTick] = useState(0);
   const prevEventRef = useRef<string | null>(null);
+  const initialMountRef = useRef(true);
 
   const fetchCardNames = useCallback(async () => {
     try {
@@ -58,8 +65,18 @@ export function LastAccessCard({ status }: LastAccessCardProps) {
   // Track when lastEvent changes to record timestamp
   useEffect(() => {
     const currentEvent = status?.lastEvent || null;
+
+    // On initial mount: just record the current event as baseline without overwriting persisted time
+    if (initialMountRef.current) {
+      initialMountRef.current = false;
+      prevEventRef.current = currentEvent;
+      return;
+    }
+
     if (currentEvent && currentEvent !== prevEventRef.current && currentEvent !== 'System ready') {
-      setLastEventTime(new Date().toISOString());
+      const now = new Date().toISOString();
+      setLastEventTime(now);
+      try { localStorage.setItem('lastAccessTime', now); } catch {}
     }
     prevEventRef.current = currentEvent;
   }, [status?.lastEvent, status?.lastCard]);

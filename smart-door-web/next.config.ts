@@ -2,10 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
-  // Disable all HTTP caching — always serve fresh data
+  // Disable HTTP caching for API routes — always serve fresh data
   headers: async () => [
     {
-      source: '/(.*)',
+      source: '/api/:path*',
       headers: [
         { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate' },
         { key: 'Pragma', value: 'no-cache' },

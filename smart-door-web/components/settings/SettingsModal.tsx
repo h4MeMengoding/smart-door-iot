@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { X, Wifi, Volume2, Power, Settings as SettingsIcon, Sun, Moon, Clock, RefreshCw, Terminal } from 'lucide-react';
-import { getEsp32Url, setEsp32Url } from '@/lib/config';
+import { getMqttWsUrl } from '@/lib/config';
 import { api } from '@/lib/api';
 import { EspTime } from '@/lib/types';
 import { useTheme } from '@/components/providers/ThemeProvider';
@@ -18,7 +18,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const [esp32Url, setEsp32UrlState] = useState('https://esp.ilhame.id');
+  const [mqttWsUrl, setMqttWsUrlState] = useState(() => getMqttWsUrl());
   const [isRestarting, setIsRestarting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const { theme, setTheme } = useTheme();
@@ -39,7 +39,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   useEffect(() => {
     if (isOpen) {
-      setEsp32UrlState(getEsp32Url());
+      setMqttWsUrlState(getMqttWsUrl());
       // Fetch ESP32 time
       fetchEspTime();
       // Start polling ESP32 clock every 2s
@@ -154,11 +154,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
   };
 
-  const handleSaveUrl = () => {
-    setEsp32Url(esp32Url);
-    api.updateBaseUrl();
-    toast.success('ESP32 URL updated');
-  };
 
   const handleRestartEsp = async () => {
     if (!confirm('Are you sure you want to restart the ESP32? The device will be offline for a few seconds.')) return;
@@ -193,11 +188,11 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const handleTestConnection = async () => {
     setIsTesting(true);
     try {
-      toast.loading('Testing connection...', { id: 'test-conn' });
+      toast.loading('Testing MQTT connection...', { id: 'test-conn' });
       const status = await api.getDoorStatus();
-      toast.success(`Connected! Door is ${status.doorStatus}`, { id: 'test-conn' });
+      toast.success(`Connected via MQTT! Door is ${status.doorStatus}`, { id: 'test-conn' });
     } catch {
-      toast.error('Connection failed. Check IP and API key.', { id: 'test-conn' });
+      toast.error('MQTT connection failed. Check broker URL and credentials.', { id: 'test-conn' });
     } finally {
       setIsTesting(false);
     }
@@ -311,33 +306,28 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </CardContent>
           </Card>
 
-          {/* ESP32 Connection */}
+          {/* MQTT Connection */}
           <Card variant="bordered">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
                 <Wifi className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                ESP32 Connection
+                MQTT Connection
               </CardTitle>
-              <CardDescription>Configure the ESP32 device URL</CardDescription>
+              <CardDescription>MQTT broker WebSocket URL for real-time updates</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                  ESP32 URL
+                  Broker WS URL
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={esp32Url}
-                    onChange={(e) => setEsp32UrlState(e.target.value)}
-                    placeholder="https://esp.ilhame.id"
-                    className="flex-1 px-3 py-2 rounded-xl text-[13px] font-mono focus:ring-2 focus:outline-none transition-colors"
-                    style={{ background: 'var(--bg-input)', border: '1px solid var(--border-strong)', color: 'var(--text-primary)' }}
-                  />
-                  <Button onClick={handleSaveUrl} variant="primary" size="sm">Save</Button>
+                <div
+                  className="px-3 py-2 rounded-xl text-[13px] font-mono truncate"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+                >
+                  {mqttWsUrl}
                 </div>
-                <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                  Default: https://esp.ilhame.id
+                <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                  Configured via environment variables. Update <code className="px-1 py-0.5 rounded" style={{ background: 'var(--bg-surface-hover)' }}>NEXT_PUBLIC_MQTT_WS_URL</code> in <code className="px-1 py-0.5 rounded" style={{ background: 'var(--bg-surface-hover)' }}>.env</code> to change.
                 </p>
               </div>
               <Button onClick={handleTestConnection} variant="secondary" disabled={isTesting} size="sm">

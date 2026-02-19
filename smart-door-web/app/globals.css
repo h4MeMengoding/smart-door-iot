@@ -172,7 +172,7 @@ body {
 
 /* ── Background Glows ── */
 .glow {
-  position: absolute;
+  position: fixed;
   border-radius: 50%;
   filter: blur(100px);
   opacity: 0.3;

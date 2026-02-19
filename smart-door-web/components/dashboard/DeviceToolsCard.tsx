@@ -10,8 +10,8 @@ import {
 } from 'lucide-react';
 import { DoorStatus } from '@/lib/types';
 import { api } from '@/lib/api';
-import { getApiBaseUrl } from '@/lib/config';
 import { logSystemEvent } from '@/lib/systemEvents';
+import { dashboardEvents } from '@/lib/dashboardEvents';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
@@ -48,8 +48,8 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
   const [cloneState, setCloneState] = useState<CloneUiState>('idle');
   const [cloneSourceUID, setCloneSourceUID] = useState('');
   const [cloneCountdown, setCloneCountdown] = useState(30);
-  const clonePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cloneStartRef = useRef<number>(0);
+  const cloneCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // --- RFID Toggle state ---
   const [rfidDisabled, setRfidDisabled] = useState(status?.rfidDisabled ?? false);
@@ -102,9 +102,9 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
     };
   }, [rfidCountdownMs > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load schedule restart config when restart panel opens
+  // Load schedule restart config on mount (for dot indicator) and when restart panel opens (for full config)
   useEffect(() => {
-    if (activePanel === 'restart' && !schedLoaded) {
+    if (!schedLoaded) {
       (async () => {
         try {
           const config = await api.getScheduledRestart();
@@ -117,7 +117,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
         }
       })();
     }
-  }, [activePanel, schedLoaded]);
+  }, [schedLoaded]);
 
   // ── Add Card handlers ──
   const handleToggleRegistration = async () => {
@@ -196,9 +196,8 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
     });
     xhr.addEventListener('error', () => { xhrRef.current = null; setOtaError('Connection lost.'); setOtaState('error'); toast.error('Failed to connect to ESP32'); });
     xhr.addEventListener('timeout', () => { xhrRef.current = null; setOtaError('Upload timed out.'); setOtaState('error'); });
-    xhr.timeout = 60000;
-    const baseUrl = getApiBaseUrl();
-    xhr.open('POST', `${baseUrl}/do-update`);
+    xhr.timeout = 120000;
+    xhr.open('POST', '/api/ota');
     xhr.send(formData);
   }, [otaFile]);
 
@@ -297,45 +296,78 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
     }
   };
 
-  // ── Clone handlers ──
-  const stopClonePoll = useCallback(() => {
-    if (clonePollRef.current) {
-      clearInterval(clonePollRef.current);
-      clonePollRef.current = null;
+  const handleCancelSchedule = async () => {
+    setIsSavingSched(true);
+    try {
+      const result = await api.setScheduledRestart({ mode: 0, hour: schedHour, interval: schedInterval });
+      if (result.success) {
+        setSchedMode(0);
+        toast.success('Scheduled restart disabled');
+        logSystemEvent('scheduled_restart', 'Scheduled restart disabled');
+      }
+    } catch {
+      toast.error('Failed to cancel schedule');
+    } finally {
+      setIsSavingSched(false);
+    }
+  };
+
+  const getScheduleDescription = () => {
+    if (schedMode === 1) return `Daily at ${schedHour.toString().padStart(2, '0')}:00 WIB`;
+    if (schedMode === 2) return `Every ${schedInterval} hour${schedInterval > 1 ? 's' : ''}`;
+    return 'Disabled';
+  };
+
+  // ── Clone handlers (MQTT event-driven) ──
+  const stopCloneCountdown = useCallback(() => {
+    if (cloneCountdownRef.current) {
+      clearInterval(cloneCountdownRef.current);
+      cloneCountdownRef.current = null;
     }
   }, []);
 
   const resetClone = useCallback(() => {
-    stopClonePoll();
+    stopCloneCountdown();
     setCloneState('idle');
     setCloneSourceUID('');
     setCloneCountdown(30);
-  }, [stopClonePoll]);
+  }, [stopCloneCountdown]);
 
-  const pollCloneStatus = useCallback(async () => {
-    try {
-      const d = await api.getCloneStatus();
+  const startCloneCountdown = useCallback(() => {
+    stopCloneCountdown();
+    cloneStartRef.current = Date.now();
+    cloneCountdownRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - cloneStartRef.current) / 1000);
+      setCloneCountdown(Math.max(0, 30 - elapsed));
+    }, 1000);
+  }, [stopCloneCountdown]);
 
-      if (d.cloneResult === 'success') {
+  // Subscribe to clone status via MQTT (dashboardEvents)
+  useEffect(() => {
+    const unsub = dashboardEvents.on('clone-status', (data: { state?: string; step?: string; sourceUID?: string; result?: string }) => {
+      // Terminal states
+      if (data.result === 'success') {
         setCloneState('success');
-        if (d.sourceUID) setCloneSourceUID(d.sourceUID);
-        stopClonePoll();
+        if (data.sourceUID) setCloneSourceUID(data.sourceUID);
+        stopCloneCountdown();
         setTimeout(resetClone, 4000);
         return;
       }
-      if (d.cloneResult === 'failed') {
+      if (data.result === 'failed') {
         setCloneState('failed');
-        stopClonePoll();
+        stopCloneCountdown();
         setTimeout(resetClone, 4000);
         return;
       }
-      if (d.cloneResult === 'timeout') {
+      if (data.result === 'timeout') {
         setCloneState('timeout');
-        stopClonePoll();
+        stopCloneCountdown();
         setTimeout(resetClone, 4000);
         return;
       }
-      if (d.state !== 'CLONE_MODE') {
+
+      // Active clone mode
+      if (data.state !== 'CLONE_MODE') {
         resetClone();
         return;
       }
@@ -344,16 +376,16 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
       const elapsed = Math.floor((Date.now() - cloneStartRef.current) / 1000);
       setCloneCountdown(Math.max(0, 30 - elapsed));
 
-      if (d.step === 'WAIT_SOURCE') {
+      if (data.step === 'WAIT_SOURCE') {
         setCloneState('wait-source');
-      } else if (d.step === 'WAIT_TARGET') {
+      } else if (data.step === 'WAIT_TARGET') {
         setCloneState('wait-target');
-        if (d.sourceUID) setCloneSourceUID(d.sourceUID);
+        if (data.sourceUID) setCloneSourceUID(data.sourceUID);
       }
-    } catch {
-      // Connection lost, keep polling
-    }
-  }, [stopClonePoll, resetClone]);
+    });
+
+    return unsub;
+  }, [resetClone, stopCloneCountdown]);
 
   const handleStartClone = async () => {
     try {
@@ -363,7 +395,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
         setCloneState('wait-source');
         toast.success(result.message || 'Clone mode activated');
         logSystemEvent('clone_started', 'Clone mode activated');
-        clonePollRef.current = setInterval(pollCloneStatus, 600);
+        startCloneCountdown();
       } else {
         toast.error(result.message || 'Failed to start clone mode');
       }
@@ -386,10 +418,10 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
     }
   };
 
-  // Cleanup clone poll on unmount
+  // Cleanup clone countdown on unmount
   useEffect(() => {
-    return () => { stopClonePoll(); };
-  }, [stopClonePoll]);
+    return () => { stopCloneCountdown(); };
+  }, [stopCloneCountdown]);
 
   return (
     <Card>
@@ -451,7 +483,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
 
           <button
             onClick={() => togglePanel('restart')}
-            className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all"
+            className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all relative"
             style={{
               background: activePanel === 'restart' ? 'var(--danger-light)' : 'var(--bg-surface-hover)',
               border: `1px solid ${activePanel === 'restart' ? 'var(--danger)' : 'var(--border)'}`,
@@ -460,6 +492,9 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
           >
             <Power className="w-4 h-4" />
             <span className="text-[11px] font-medium">Restart</span>
+            {schedMode > 0 && (
+              <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ background: 'var(--danger)' }} />
+            )}
           </button>
 
           <button
@@ -646,17 +681,129 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                 className="p-3.5 rounded-xl space-y-3"
                 style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}
               >
+                {/* Schedule Status Banner */}
+                <div className="flex items-start gap-2 p-2.5 rounded-xl" style={{
+                  background: schedMode > 0 ? 'color-mix(in srgb, var(--primary) 10%, transparent)' : 'var(--bg-surface)',
+                  border: `1px solid ${schedMode > 0 ? 'color-mix(in srgb, var(--primary) 25%, transparent)' : 'var(--border)'}`,
+                }}>
+                  <Clock className="w-4 h-4 shrink-0 mt-0.5" style={{
+                    color: schedMode > 0 ? 'var(--primary)' : 'var(--text-muted)',
+                  }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold" style={{
+                      color: schedMode > 0 ? 'var(--primary)' : 'var(--text-secondary)',
+                    }}>
+                      Schedule: {schedMode > 0 ? 'Active' : 'Off'}
+                    </p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      {schedMode > 0
+                        ? getScheduleDescription()
+                        : 'No automatic restart configured.'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* If schedule is active: show cancel button, no editing */}
+                {schedMode > 0 ? (
+                  <Button
+                    onClick={handleCancelSchedule}
+                    isLoading={isSavingSched}
+                    variant="secondary"
+                    size="sm"
+                    className="w-full"
+                  >
+                    <X className="w-3.5 h-3.5 mr-1.5" />
+                    Cancel Schedule
+                  </Button>
+                ) : (
+                  /* If schedule is off: show config form */
+                  <>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Schedule Type</label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          { value: 1, label: 'At Hour (daily)' },
+                          { value: 2, label: 'Every X hours' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setSchedMode(opt.value)}
+                            className="px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all"
+                            style={{
+                              background: schedMode === opt.value ? 'var(--primary-light)' : 'var(--bg-surface)',
+                              color: schedMode === opt.value ? 'var(--primary)' : 'var(--text-muted)',
+                              border: `1px solid ${schedMode === opt.value ? 'var(--primary)' : 'var(--border)'}`,
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* At hour config */}
+                    {schedMode === 1 && (
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Restart at</label>
+                        <select
+                          value={schedHour}
+                          onChange={(e) => setSchedHour(parseInt(e.target.value))}
+                          className="w-full px-2.5 py-1.5 rounded-lg text-xs"
+                          style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+                        >
+                          {Array.from({ length: 24 }, (_, i) => (
+                            <option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>
+                          ))}
+                        </select>
+                        <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                          ESP32 will restart once daily at this hour (WIB).
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Every X hours config */}
+                    {schedMode === 2 && (
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Restart every</label>
+                        <select
+                          value={schedInterval}
+                          onChange={(e) => setSchedInterval(parseInt(e.target.value))}
+                          className="w-full px-2.5 py-1.5 rounded-lg text-xs"
+                          style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+                        >
+                          {[1, 2, 3, 4, 6, 8, 12, 24].map((h) => (
+                            <option key={h} value={h}>{h} hour{h > 1 ? 's' : ''}</option>
+                          ))}
+                        </select>
+                        <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                          ESP32 will restart after running for this many hours.
+                        </p>
+                      </div>
+                    )}
+
+                    {schedMode > 0 && (
+                      <Button
+                        onClick={handleSaveScheduleRestart}
+                        isLoading={isSavingSched}
+                        variant="primary"
+                        size="sm"
+                        className="w-full"
+                      >
+                        <Clock className="w-3.5 h-3.5 mr-1.5" />
+                        Activate Schedule
+                      </Button>
+                    )}
+                  </>
+                )}
+
+                {/* Divider */}
+                <div className="border-t" style={{ borderColor: 'var(--border)' }} />
+
                 {/* Restart Now */}
                 {restartState === 'idle' && (
-                  <>
-                    <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Restart Now</p>
-                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                      Restart the ESP32. Device will be offline for ~10 seconds.
-                    </p>
-                    <Button onClick={handleRestart} variant="danger" size="sm" className="w-full">
-                      <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Restart Device
-                    </Button>
-                  </>
+                  <Button onClick={handleRestart} variant="danger" size="sm" className="w-full">
+                    <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Restart Now
+                  </Button>
                 )}
 
                 {restartState === 'confirming' && (
@@ -690,94 +837,6 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                     <span className="text-xs font-medium" style={{ color: 'var(--success-text)' }}>Restart initiated. Back online in ~10s.</span>
                   </div>
                 )}
-
-                {/* Divider */}
-                <div className="border-t" style={{ borderColor: 'var(--border)' }} />
-
-                {/* Schedule Restart */}
-                <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  <Clock className="w-3.5 h-3.5 inline mr-1.5" style={{ color: 'var(--primary)' }} />
-                  Scheduled Restart
-                </p>
-                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  Automatically restart ESP32 on a schedule to keep it healthy.
-                </p>
-
-                {/* Mode selector */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Mode</label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {[
-                      { value: 0, label: 'Off' },
-                      { value: 1, label: 'At Hour' },
-                      { value: 2, label: 'Every X hrs' },
-                    ].map((opt) => (
-                      <button
-                        key={opt.value}
-                        onClick={() => setSchedMode(opt.value)}
-                        className="px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all"
-                        style={{
-                          background: schedMode === opt.value ? 'var(--primary-light)' : 'var(--bg-surface)',
-                          color: schedMode === opt.value ? 'var(--primary)' : 'var(--text-muted)',
-                          border: `1px solid ${schedMode === opt.value ? 'var(--primary)' : 'var(--border)'}`,
-                        }}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* At hour config */}
-                {schedMode === 1 && (
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Restart at</label>
-                    <select
-                      value={schedHour}
-                      onChange={(e) => setSchedHour(parseInt(e.target.value))}
-                      className="w-full px-2.5 py-1.5 rounded-lg text-xs"
-                      style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                    >
-                      {Array.from({ length: 24 }, (_, i) => (
-                        <option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>
-                      ))}
-                    </select>
-                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                      ESP32 will restart once daily at this hour (WIB).
-                    </p>
-                  </div>
-                )}
-
-                {/* Every X hours config */}
-                {schedMode === 2 && (
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Restart every</label>
-                    <select
-                      value={schedInterval}
-                      onChange={(e) => setSchedInterval(parseInt(e.target.value))}
-                      className="w-full px-2.5 py-1.5 rounded-lg text-xs"
-                      style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                    >
-                      {[1, 2, 3, 4, 6, 8, 12, 24].map((h) => (
-                        <option key={h} value={h}>{h} hour{h > 1 ? 's' : ''}</option>
-                      ))}
-                    </select>
-                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                      ESP32 will restart after running for this many hours.
-                    </p>
-                  </div>
-                )}
-
-                <Button
-                  onClick={handleSaveScheduleRestart}
-                  isLoading={isSavingSched}
-                  variant="primary"
-                  size="sm"
-                  className="w-full"
-                >
-                  <Clock className="w-3.5 h-3.5 mr-1.5" />
-                  {schedMode === 0 ? 'Save (Disabled)' : 'Save Schedule'}
-                </Button>
               </div>
             </motion.div>
           )}

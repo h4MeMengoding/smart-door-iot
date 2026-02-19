@@ -4,7 +4,6 @@ import { useState, useRef, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Upload, FileUp, CheckCircle, XCircle, AlertTriangle, Loader2, X } from 'lucide-react';
-import { getApiBaseUrl } from '@/lib/config';
 import { logSystemEvent } from '@/lib/systemEvents';
 import toast from 'react-hot-toast';
 
@@ -132,8 +131,7 @@ export function OtaUpdateCard() {
 
     xhr.timeout = 60000; // 60s timeout
 
-    const baseUrl = getApiBaseUrl();
-    xhr.open('POST', `${baseUrl}/do-update`);
+    xhr.open('POST', '/api/ota');
     xhr.send(formData);
   }, [file]);
 

@@ -6,7 +6,7 @@
 #include "BuzzerController.h"
 #include "LEDController.h"
 #include "DoorController.h"
-#include "APIHandler.h"
+#include "MQTTHandler.h"
 
 // ============================================
 // HELPER: Get card delay from NVS
@@ -85,9 +85,10 @@ void handleStateIdle() {
         currentState = STATE_UNLOCK;
         lastEvent = "Touch sensor exit";
         
-        // Broadcast to WebSocket so web dashboard syncs
+        // Broadcast to MQTT so web dashboard syncs
         if (wifiConnected) {
             broadcastDoorStatus();
+            publishAccessLog("TOUCH", "unlock", true, "TOUCH");
         }
         return;
     }
@@ -165,10 +166,11 @@ void handleStateAuthCheck() {
             lastEvent = "Valid card: " + lastCardUID;
         }
         
-        // Broadcast to WebSocket clients
+        // Broadcast to MQTT
         if (wifiConnected) {
             broadcastCardScan(lastCardUID, true);
             broadcastDoorStatus();
+            publishAccessLog(lastCardUID, "unlock", true, "RFID");
         }
         return;
     }
@@ -196,9 +198,10 @@ void handleStateAuthCheck() {
     lastScanTime = 0;  // Reset cooldown so next tap is always accepted
     lastEvent = "Invalid card: " + lastCardUID;
     
-    // Broadcast to WebSocket clients
+    // Broadcast to MQTT
     if (wifiConnected) {
         broadcastCardScan(lastCardUID, false);
+        publishAccessLog(lastCardUID, "denied", false, "RFID");
     }
 }
 

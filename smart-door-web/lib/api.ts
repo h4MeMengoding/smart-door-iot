@@ -1,225 +1,213 @@
-import { DoorStatus, Card, SystemInfo, Settings, DoorConfig, CloneStatus, ScheduledRestartConfig, EspTime } from './types';
-import { getApiBaseUrl, getApiKey } from './config';
+// ============================================
+// API Client — Routes all commands through Next.js API → MQTT
+// ============================================
+// No more direct ESP32 HTTP calls. All commands go:
+//   Browser → Next.js /api/esp → MQTT → ESP32
+
+import { DoorStatus, Card, SystemInfo, DoorConfig, CloneStatus, ScheduledRestartConfig, EspTime } from './types';
 
 class ApiClient {
-  private baseUrl: string;
-
-  constructor() {
-    this.baseUrl = getApiBaseUrl();
-  }
-
-  updateBaseUrl() {
-    this.baseUrl = getApiBaseUrl();
-  }
-
-  private async request<T>(
-    endpoint: string,
-    options?: RequestInit
-  ): Promise<T> {
-    const apiKey = getApiKey();
-    
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
-        ...options?.headers,
-      },
+  // Send a command to ESP32 via Next.js MQTT proxy
+  private async command<T>(command: string, params?: Record<string, unknown>): Promise<T> {
+    const response = await fetch('/api/esp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, ...params }),
     });
 
     if (!response.ok) {
       if (response.status === 401) {
-        throw new Error('Unauthorized - Invalid or missing API key');
+        throw new Error('Unauthorized');
       }
-      throw new Error(`API Error: ${response.statusText}`);
+      const data = await response.json().catch(() => ({ message: response.statusText }));
+      throw new Error(data.message || `API Error: ${response.status}`);
     }
 
     return response.json();
   }
 
-  // Door Control
+  // Query ESP32 via Next.js MQTT proxy (GET)
+  private async query<T>(command: string): Promise<T> {
+    const response = await fetch(`/api/esp?command=${encodeURIComponent(command)}`, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('Unauthorized');
+      }
+      const data = await response.json().catch(() => ({ message: response.statusText }));
+      throw new Error(data.message || `API Error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  // ── Door Control ──
+  
   async getDoorStatus(): Promise<DoorStatus> {
-    return this.request<DoorStatus>('/api/status');
+    return this.query<DoorStatus>('door.status');
   }
 
   async unlockDoor(): Promise<{ success: boolean; message?: string }> {
-    return this.request('/api/door/unlock', { method: 'POST' });
+    return this.command('door.unlock');
   }
 
   async lockDoor(): Promise<{ success: boolean; message?: string }> {
-    return this.request('/api/door/lock', { method: 'POST' });
+    return this.command('door.lock');
   }
 
-  // Card Management
+  // ── Card Management ──
+
   async getCards(): Promise<Card[]> {
-    return this.request<Card[]>('/api/cards');
+    const result = await this.command<{ cards: string[]; count: number }>('cards.list');
+    return (result.cards || []).map(uid => ({ uid }));
   }
 
   async addCard(uid: string, nickname?: string): Promise<{ success: boolean; message?: string }> {
-    return this.request('/api/cards', {
-      method: 'POST',
-      body: JSON.stringify({ uid, nickname }),
-    });
+    return this.command('cards.add', { uid, nickname });
   }
 
   async removeCard(uid: string): Promise<{ success: boolean; message?: string }> {
-    return this.request('/api/cards/remove', {
-      method: 'POST',
-      body: JSON.stringify({ uid }),
-    });
+    return this.command('cards.remove', { uid });
   }
 
   async updateCardNickname(uid: string, nickname: string): Promise<{ success: boolean }> {
-    return this.request(`/api/cards/${uid}/nickname`, {
+    // Card nicknames are stored in the web database, not on ESP32
+    const response = await fetch('/api/cards', {
       method: 'PUT',
-      body: JSON.stringify({ nickname }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid, nickname }),
     });
+    return response.json();
   }
 
-  // System Info
+  // ── System Info ──
+
   async getSystemInfo(): Promise<SystemInfo> {
-    return this.request<SystemInfo>('/api/system/info');
+    return this.query<SystemInfo>('system.info');
   }
 
   async restartEsp(): Promise<{ success: boolean }> {
-    return this.request('/api/system/restart', { method: 'POST' });
+    return this.command('system.restart');
   }
 
-  // Registration Mode
+  // ── Registration Mode ──
+
   async toggleRegistrationMode(): Promise<{ success: boolean; message?: string; registrationMode?: boolean }> {
-    return this.request('/api/mode/register', { method: 'POST' });
+    return this.command('mode.register');
   }
 
-  // Settings
-  async updateSettings(settings: Partial<Settings>): Promise<{ success: boolean }> {
-    return this.request('/api/settings', {
-      method: 'PUT',
-      body: JSON.stringify(settings),
-    });
-  }
+  // ── Buzzer ──
 
-  async getSettings(): Promise<Settings> {
-    return this.request<Settings>('/api/settings');
-  }
-
-  // Buzzer Test
   async playBuzzer(pattern: string): Promise<{ success: boolean }> {
-    return this.request('/api/buzzer/play', {
-      method: 'POST',
-      body: JSON.stringify({ pattern }),
-    });
+    return this.command('system.buzzer', { pattern });
   }
 
-  // ── Config: Auto-lock & Card Delays (push to ESP32) ──
+  // ── Config ──
 
   async pushAutoLockDuration(durationSec: number): Promise<{ success: boolean }> {
-    return this.request('/api/config/autolock', {
-      method: 'POST',
-      body: JSON.stringify({ duration: durationSec }),
-    });
+    return this.command('config.set_autolock', { duration: durationSec });
   }
 
   async pushCardDelay(uid: string, delaySec: number): Promise<{ success: boolean }> {
-    return this.request('/api/config/card-delay', {
-      method: 'POST',
-      body: JSON.stringify({ uid, delay: delaySec }),
-    });
+    return this.command('config.set_card_delay', { uid, delay: delaySec });
   }
 
   async getEspConfig(): Promise<DoorConfig> {
-    return this.request<DoorConfig>('/api/config');
+    return this.command<DoorConfig>('config.get');
   }
 
-  // Push full card list to ESP32 (DB → ESP32 sync)
   async syncCardsToEsp(uids: string[]): Promise<{ success: boolean; count?: number }> {
-    return this.request('/api/cards/sync', {
-      method: 'POST',
-      body: JSON.stringify({ uids }),
-    });
+    return this.command('cards.sync', { uids });
   }
 
-  // Clone Mode
+  // ── Clone Mode ──
+
   async startClone(): Promise<{ success: boolean; message?: string }> {
-    return this.request('/api/clone/start', { method: 'POST' });
+    return this.command('mode.clone_start');
   }
 
   async cancelClone(): Promise<{ success: boolean; message?: string }> {
-    return this.request('/api/clone/cancel', { method: 'POST' });
+    return this.command('mode.clone_cancel');
   }
 
   async getCloneStatus(): Promise<CloneStatus> {
-    return this.request<CloneStatus>('/api/clone/status');
+    return this.command<CloneStatus>('mode.clone_status');
   }
 
-  // RFID Toggle
+  // ── RFID Toggle ──
+
   async toggleRfid(): Promise<{ success: boolean; rfidDisabled: boolean; rfidAutoEnableMs?: number; message: string }> {
-    return this.request('/api/rfid/toggle', { method: 'POST' });
+    return this.command('rfid.toggle');
   }
 
   async disableRfidTimed(minutes: number): Promise<{ success: boolean; rfidDisabled: boolean; rfidAutoEnableMs: number; message: string }> {
-    return this.request('/api/rfid/disable-timed', {
-      method: 'POST',
-      body: JSON.stringify({ minutes }),
-    });
+    return this.command('rfid.disable_timed', { minutes });
   }
 
   async getRfidStatus(): Promise<{ rfidDisabled: boolean; rfidAutoEnableMs?: number }> {
-    return this.request('/api/rfid/status');
+    return this.command<{ rfidDisabled: boolean; rfidAutoEnableMs?: number }>('rfid.status');
   }
 
-  // Scheduled Restart
+  // ── Scheduled Restart ──
+
   async getScheduledRestart(): Promise<ScheduledRestartConfig> {
-    return this.request<ScheduledRestartConfig>('/api/schedule/restart');
+    return this.command<ScheduledRestartConfig>('schedule.get');
   }
 
   async setScheduledRestart(config: ScheduledRestartConfig): Promise<{ success: boolean } & ScheduledRestartConfig> {
-    return this.request('/api/schedule/restart', {
-      method: 'POST',
-      body: JSON.stringify(config),
-    });
+    return this.command('schedule.set', { ...config });
   }
 
-  // Card Delay Schedule (time-based) — push to ESP32
+  // ── Card Delay Schedule ──
+
   async getEspSchedules(): Promise<{ success: boolean; ntpSynced: boolean; currentHour: number; schedules: { uid: string; startHour: number; endHour: number; delaySec: number }[] }> {
-    return this.request('/api/config/card-schedule');
+    return this.command('config.get_schedules');
   }
 
   async pushCardSchedule(uid: string, startHour: number, endHour: number, delaySec: number): Promise<{ success: boolean }> {
-    return this.request('/api/config/card-schedule', {
-      method: 'POST',
-      body: JSON.stringify({ uid, startHour, endHour, delaySec }),
-    });
+    return this.command('config.set_schedule', { uid, startHour, endHour, delaySec });
   }
 
   async removeCardSchedule(uid: string): Promise<{ success: boolean }> {
-    return this.request('/api/config/card-schedule', {
-      method: 'POST',
-      body: JSON.stringify({ uid, remove: true }),
-    });
+    return this.command('config.set_schedule', { uid, remove: true });
   }
 
   async pushBulkCardSchedules(schedules: { uid: string; startHour: number; endHour: number; delaySec: number; remove?: boolean }[]): Promise<{ success: boolean }> {
-    return this.request('/api/config/card-schedule', {
-      method: 'POST',
-      body: JSON.stringify({ schedules }),
-    });
+    return this.command('config.set_schedule', { schedules });
   }
 
-  // ESP32 Time
+  // ── ESP32 Time ──
+
   async getEspTime(): Promise<EspTime> {
-    return this.request<EspTime>('/api/time');
+    return this.command<EspTime>('time.get');
   }
 
   async syncEspTime(): Promise<{ success: boolean; ntpSynced: boolean; time?: string; message?: string }> {
-    return this.request('/api/time/sync', { method: 'POST' });
+    return this.command('time.sync');
   }
 
   async setEspTime(epoch: number): Promise<{ success: boolean; time?: string; hour?: number; message?: string }> {
-    return this.request('/api/time/set', {
-      method: 'POST',
-      body: JSON.stringify({ epoch }),
-    });
+    return this.command('time.set', { epoch });
   }
+
+  // ── Settings (stored in web DB, not ESP32) ──
+
+  async updateSettings(settings: Partial<{ autoLockDuration: number; enableNotifications: boolean }>): Promise<{ success: boolean }> {
+    const response = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    return response.json();
+  }
+
+  async getSettings(): Promise<{ autoLockDuration: number; enableNotifications: boolean }> {
+    const response = await fetch('/api/config');
+    return response.json();
+  }
+
 }
 
 export const api = new ApiClient();

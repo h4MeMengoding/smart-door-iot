@@ -19,7 +19,6 @@
  */
 
 #include <Arduino.h>
-#include <ArduinoOTA.h>
 #include "config.h"
 #include "GlobalState.h"
 #include "CardManager.h"
@@ -29,7 +28,9 @@
 #include "DoorController.h"
 #include "TouchSensor.h"
 #include "WiFiManager.h"
-#include "APIHandler.h"
+#include "MQTTHandler.h"
+#include "OTAUpdate.h"
+#include "HttpOTA.h"
 #include "StateMachine.h"
 
 // ============================================
@@ -108,20 +109,21 @@ void setup() {
         currentState = STATE_ERROR;
     }
     
-    // Initialize WiFi
+    // Initialize WiFi + MQTT + HTTP OTA fallback
     setupWiFi();
-    setupOTA();
-    setupWebServer();
+    setupMQTT();
+    setupHttpOTA();
     
     // System ready
     DEBUG_PRINTLN("\n========================================");
-    DEBUG_PRINTLN(" SYSTEM READY");
+    DEBUG_PRINTLN(" SYSTEM READY (MQTT Mode)");
     DEBUG_PRINTLN("========================================");
     DEBUG_PRINTF("State: %s\n", "IDLE");
     DEBUG_PRINTF("Registered cards: %d/%d\n", userCardCount, MAX_USER_CARDS);
     DEBUG_PRINTF("WiFi: %s\n", wifiConnected ? "Connected" : "Offline");
+    DEBUG_PRINTF("MQTT: %s\n", isMqttConnected() ? "Connected" : "Disconnected");
     if (wifiConnected) {
-        DEBUG_PRINTF("Dashboard: http://%s\n", WiFi.localIP().toString().c_str());
+        DEBUG_PRINTF("IP: %s\n", WiFi.localIP().toString().c_str());
     }
     DEBUG_PRINTLN("========================================\n");
     
@@ -134,26 +136,25 @@ void setup() {
 // ============================================
 
 void loop() {
-    // Handle OTA update (prioritas tertinggi)
-    if (wifiConnected) {
-        ArduinoOTA.handle();
-    }
-    
-    // Jika OTA sedang berlangsung, skip semua logic lain
-    if (otaInProgress) {
+    // Jika MQTT OTA sedang berlangsung, hanya handle MQTT
+    if (mqttOtaInProgress) {
+        if (wifiConnected) {
+            mqttLoop();
+        }
+        delay(1);
         return;
     }
     
-    // Check WiFi connection & handle reconnect + web server recovery
+    // Check WiFi connection & handle reconnect
     checkWiFi();
     
-    // Yield dulu untuk WiFi/AsyncWebServer background tasks
-    yield();
-    
-    // Handle WebSocket cleanup
+    // Handle MQTT communication
     if (wifiConnected) {
-        handleWebSocketTasks();
+        handleMQTTTasks();
     }
+    
+    // Handle HTTP OTA fallback server
+    handleHttpOTA();
     
     // Update non-blocking components
     updateBuzzer();

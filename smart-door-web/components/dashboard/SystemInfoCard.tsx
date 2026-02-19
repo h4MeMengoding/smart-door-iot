@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
-import { Activity, Wifi, Clock, Database, Cpu, HardDrive, Thermometer, MemoryStick } from 'lucide-react';
+import { Activity, Wifi, Clock, Database, HardDrive, Thermometer, MemoryStick, Radio } from 'lucide-react';
 import { SystemInfo } from '@/lib/types';
-import { api } from '@/lib/api';
 
 interface SystemInfoCardProps {
   uptimeRaw?: string; // e.g. "12345s" from ESP32
   isConnected?: boolean;
+  sysInfo?: SystemInfo | null; // Received via MQTT from parent
 }
 
 function parseUptimeSeconds(raw?: string): number {
@@ -40,10 +40,9 @@ function getSignalInfo(rssi?: number) {
   return { label: 'Poor', color: 'var(--danger)', bars: 1 };
 }
 
-export function SystemInfoCard({ uptimeRaw, isConnected = false }: SystemInfoCardProps) {
+export function SystemInfoCard({ uptimeRaw, isConnected = false, sysInfo = null }: SystemInfoCardProps) {
   const [uptimeSeconds, setUptimeSeconds] = useState(0);
   const [dbConnected, setDbConnected] = useState<boolean | null>(null);
-  const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null);
   const baseUptimeRef = useRef(0);
   const baseTimestampRef = useRef(Date.now());
 
@@ -82,22 +81,6 @@ export function SystemInfoCard({ uptimeRaw, isConnected = false }: SystemInfoCar
     const id = setInterval(checkDbHealth, 30000);
     return () => clearInterval(id);
   }, [checkDbHealth]);
-
-  // Fetch system info from ESP32
-  const fetchSysInfo = useCallback(async () => {
-    try {
-      const info = await api.getSystemInfo();
-      setSysInfo(info);
-    } catch {
-      // ESP32 not reachable
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchSysInfo();
-    const id = setInterval(fetchSysInfo, 10000); // every 10s
-    return () => clearInterval(id);
-  }, [fetchSysInfo]);
 
   const signal = getSignalInfo(sysInfo?.rssi);
   const ramPct = sysInfo?.totalHeap && sysInfo?.freeHeap
@@ -149,6 +132,23 @@ export function SystemInfoCard({ uptimeRaw, isConnected = false }: SystemInfoCar
             </div>
             <span className="text-[13px] font-semibold" style={{ color: signal.color }}>
               {isConnected ? signal.label : 'Offline'}
+            </span>
+          </div>
+        </div>
+
+        {/* MQTT Broker */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5" style={{ color: 'var(--text-muted)' }}>
+            <Radio className="w-4 h-4" />
+            <span className="text-[13px]">MQTT</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div
+              className={`w-2 h-2 rounded-full ${isConnected ? 'animate-pulse' : ''}`}
+              style={{ background: isConnected ? 'var(--success)' : 'var(--danger)' }}
+            />
+            <span className="text-[13px] font-semibold" style={{ color: isConnected ? 'var(--success-text)' : 'var(--danger-text)' }}>
+              {isConnected ? 'Connected' : 'Disconnected'}
             </span>
           </div>
         </div>

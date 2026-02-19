@@ -111,12 +111,25 @@ const byte MASTER_CARDS[MAX_MASTER_CARDS][8] = {
 #define OTA_WEB_PASSWORD    "Ayamgeprek"         // Password for web OTA page
 
 // ============================================
-// � API AUTHENTICATION CONFIGURATION
+// 📡 MQTT CONFIGURATION
 // ============================================
 
-#define ENABLE_API_AUTH     true    // Enable API authentication
-#define API_KEY             "Ayamgeprek102938"  // Change this to your own secure key
-#define API_KEY_HEADER      "X-API-Key"  // Header name for API key
+// EMQX Cloud settings — UPDATE THESE with your EMQX Cloud deployment details
+// Get connection address from: https://cloud-intl.emqx.com/ → Deployment → Overview
+#define MQTT_SERVER         "f99a6d01.ala.asia-southeast1.emqxsl.com"  // EMQX Cloud connection address
+#define MQTT_PORT           8883                 // EMQX Cloud always uses 8883 (MQTTS/TLS)
+#define MQTT_USERNAME       "smartdoor-esp32"    // EMQX Cloud credential username
+#define MQTT_PASSWORD       "Ayamgeprek171717"   // EMQX Cloud credential password
+#define MQTT_CLIENT_ID      "smartdoor-esp32"    // Unique client ID
+#define MQTT_USE_TLS        1                    // MUST be 1 for EMQX Cloud (TLS required)
+#define MQTT_BUFFER_SIZE    16384                // 16KB buffer for OTA chunks
+// Note: MQTT_KEEPALIVE is defined by PubSubClient.h (default 15s)
+// We override it before including PubSubClient in MQTTHandler.h
+#define MQTT_KEEPALIVE_SEC  60                   // Keep-alive interval (seconds)
+
+// Legacy API key (used by web server for authentication)
+#define API_KEY             "Ayamgeprek102938"   // Shared secret for web ↔ ESP32 validation
+#define API_KEY_HEADER      "X-API-Key"          // Header name for API key
 
 // ============================================
 // �🔊 BUZZER PATTERNS

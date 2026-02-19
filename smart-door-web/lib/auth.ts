@@ -101,7 +101,8 @@ export function clearAttempts(ip: string): void {
 
 // ─── Session Management ──────────────────────────────────────
 function signSession(payload: string): string {
-  const secret = process.env.AUTH_SESSION_SECRET || 'default-secret';
+  const secret = process.env.AUTH_SESSION_SECRET;
+  if (!secret) throw new Error('AUTH_SESSION_SECRET environment variable is required');
   return crypto
     .createHmac('sha256', secret)
     .update(payload)
@@ -135,7 +136,19 @@ export async function validateSession(): Promise<boolean> {
 
     if (!sessionCookie?.value) return false;
 
-    const parts = sessionCookie.value.split('.');
+    return verifySessionCookie(sessionCookie.value);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Verify a session cookie value (token.signature) without reading from cookie store.
+ * Useful for API routes that need to verify auth from a raw cookie string.
+ */
+export function verifySessionCookie(cookieValue: string): boolean {
+  try {
+    const parts = cookieValue.split('.');
     if (parts.length !== 2) return false;
 
     const [token, signature] = parts;

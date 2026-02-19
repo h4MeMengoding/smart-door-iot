@@ -3,14 +3,16 @@ import { NextRequest, NextResponse } from 'next/server';
 const SESSION_COOKIE = 'smart-door-session';
 const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
 
-// Routes that don't require authentication
+// Routes that don't require middleware authentication
+// (some handle their own auth internally, e.g. API key check)
 const PUBLIC_PATHS = [
   '/api/auth/login',
   '/api/auth/check',
   '/api/auth/logout',
-  '/api/logs',        // ESP32 needs to POST logs without dashboard auth
-  '/api/logs/stream', // SSE stream (will have session check in client)
+  '/api/logs',        // Access log persistence (handles own auth via x-api-key or session)
+  '/api/logs/stream', // SSE stream (deprecated)
   '/api/health',
+  '/api/door',        // Door control for iOS Shortcuts (handles own auth via x-api-key or session)
   '/login',
 ];
 
@@ -39,7 +41,8 @@ async function verifySessionCookie(cookieValue: string): Promise<boolean> {
     if (parts.length !== 2) return false;
 
     const [token, signature] = parts;
-    const secret = process.env.AUTH_SESSION_SECRET || 'default-secret';
+    const secret = process.env.AUTH_SESSION_SECRET || '';
+    if (!secret) return false;
     const expectedSignature = await hmacSign(token, secret);
 
     // Constant-time comparison

@@ -36,9 +36,9 @@ import { MasonryGrid } from '@/components/dashboard/MasonryGrid';
 import { CardsModal } from '@/components/modals/CardsModal';
 import { LogsModal } from '@/components/modals/LogsModal';
 import { ArrangeModal } from '@/components/modals/ArrangeModal';
-import { DoorStatus, WebSocketMessage } from '@/lib/types';
+import { DoorStatus, SystemInfo, WebSocketMessage } from '@/lib/types';
 import { api } from '@/lib/api';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useMqtt as useWebSocket } from '@/hooks/useMqtt';
 import { useDashboardLayout } from '@/hooks/useDashboardLayout';
 import { dashboardEvents } from '@/lib/dashboardEvents';
 import { WifiOff, RefreshCw, GripVertical, LayoutDashboard, Check, RotateCcw, CreditCard as CreditCardIcon, FileText, LayoutList } from 'lucide-react';
@@ -100,24 +100,16 @@ function SortableCard({ id, index, isEditing, children }: SortableCardProps) {
           }}
         />
       )}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: index * 0.06, ease: [0.25, 0.46, 0.45, 0.94] }}
-      >
+      <div>
         {children}
-      </motion.div>
+      </div>
     </div>
   );
 }
 
 export default function DashboardPage() {
-  // Scroll to top on page load/refresh
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
-
   const [status, setStatus] = useState<DoorStatus | null>(null);
+  const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState(false);
   const [cardsModalOpen, setCardsModalOpen] = useState(false);
@@ -127,9 +119,7 @@ export default function DashboardPage() {
   const prevStatusRef = useRef<DoorStatus | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
   const autoLockRef = useRef(DEFAULT_AUTO_LOCK);
-  const [retryCountdown, setRetryCountdown] = useState(5);
-  const [retryAttempts, setRetryAttempts] = useState(0);
-  const retryIntervalRef = useRef(5);
+  const initialFetchDone = useRef(false);
 
   const { layout, saveLayout, resetLayout, isEditing, setIsEditing } = useDashboardLayout();
 
@@ -176,21 +166,6 @@ export default function DashboardPage() {
     return { accessType: 'RFID', label: '' };
   };
 
-  const sendAccessLog = useCallback(async (cardUid: string, action: string, success: boolean, accessType?: 'RFID' | 'WEB' | 'TOUCH') => {
-    try {
-      await fetch('/api/logs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.NEXT_PUBLIC_DEFAULT_API_KEY || '',
-        },
-        body: JSON.stringify({ cardUid, action, success, accessType }),
-      });
-    } catch (err) {
-      console.error('Failed to save access log:', err);
-    }
-  }, []);
-
   // ── Fast card add/remove: immediately update UI via WebSocket, then sync DB in background ──
   const backgroundDbSync = useCallback(async (espCards: string[]) => {
     try {
@@ -202,7 +177,7 @@ export default function DashboardPage() {
       });
       const result = await res.json();
       if (result.success) {
-        console.log(`[DB Sync] Done: +${result.added} -${result.removed} = ${result.total} total`);
+        // DB sync completed successfully
       }
       dashboardEvents.emit('cards-synced');
       dashboardEvents.emit('cards-changed');
@@ -232,37 +207,20 @@ export default function DashboardPage() {
     }
   }, [backgroundDbSync]);
 
+  // ── Fetch initial status once via MQTT command, then rely on real-time ──
   const fetchStatus = useCallback(async () => {
     try {
       const data = await api.getDoorStatus();
-
-      // Detect state transitions from polling
-      if (prevStatusRef.current) {
-        if (prevStatusRef.current.state !== data.state) {
-          if (data.state === 'REGISTRATION_MODE') {
-            toast('Registration mode activated — tap card to register', { icon: '📝', duration: 4000 });
-          } else if (prevStatusRef.current.state === 'REGISTRATION_MODE') {
-            toast.success('Exited registration mode');
-          }
-          dashboardEvents.emit('state-changed');
-        }
-        // Auto-sync when card changes detected via polling fallback
-        if (data.lastEvent !== prevStatusRef.current.lastEvent) {
-          if (data.lastEvent?.startsWith('Card added:') || data.lastEvent?.startsWith('Card removed:')) {
-            syncCards();
-          }
-        }
-      }
-
       setStatus(data);
       prevStatusRef.current = data;
       setApiError(false);
       setIsLoading(false);
+      if (data.autoLockDuration) {
+        autoLockRef.current = data.autoLockDuration;
+      }
     } catch (error) {
       console.error('Failed to fetch status:', error);
       setApiError(true);
-      setStatus(null);
-      prevStatusRef.current = null;
       setIsLoading(false);
     }
   }, []);
@@ -282,13 +240,10 @@ export default function DashboardPage() {
             const source = detectAccessSource(newStatus.lastEvent);
             if (source.accessType === 'WEB') {
               toast.success('Door unlocked via web');
-              sendAccessLog(source.label, 'unlock', true, 'WEB');
             } else if (source.accessType === 'TOUCH') {
               toast.success('Door unlocked via touch');
-              sendAccessLog(source.label, 'unlock', true, 'TOUCH');
             } else {
               toast.success('Door unlocked');
-              sendAccessLog(newStatus.lastCard || 'Unknown', 'unlock', true, 'RFID');
             }
             startCountdown();
           } else {
@@ -300,7 +255,6 @@ export default function DashboardPage() {
         if (prevStatusRef.current.lastCard !== newStatus.lastCard && newStatus.lastCard) {
           if (newStatus.lastEvent && newStatus.lastEvent.includes('denied')) {
             toast.error(`Access denied: ${newStatus.lastCard}`);
-            sendAccessLog(newStatus.lastCard, 'denied', false, 'RFID');
           }
         }
       }
@@ -351,72 +305,60 @@ export default function DashboardPage() {
       const { uid, success } = message.data;
       if (!success) {
         toast.error(`Access denied: ${uid}`);
-        sendAccessLog(uid, 'denied', false, 'RFID');
       } else {
         toast.success(`Card ${uid} authorized`);
       }
-    }
-  }, [sendAccessLog, startCountdown, stopCountdown, backgroundDbSync]);
 
-  const { isConnected, reconnect } = useWebSocket({
+    } else if (message.type === 'system_info' && message.data) {
+      // ── System info from ESP32 (every 30s, retained) ──
+      setSysInfo(message.data as SystemInfo);
+
+    } else if (message.type === 'clone_status' && message.data) {
+      // ── Clone status update — relay to DeviceToolsCard via event bus ──
+      dashboardEvents.emit('clone-status', message.data);
+
+    } else if (message.type === 'access_log' && message.data) {
+      // ── Access log from ESP32 — persist to DB and trigger UI refresh ──
+      const logData = message.data as { cardUid?: string; action?: string; success?: boolean; accessType?: string };
+      // POST to /api/logs so the log is saved (server-side MQTT may not be alive on Vercel)
+      fetch('/api/logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cardUid: logData.cardUid || null,
+          action: logData.action || 'unlock',
+          success: logData.success ?? true,
+          accessType: logData.accessType || 'RFID',
+        }),
+      }).catch(() => { /* silent — server-side MQTT may have already saved it */ });
+      // Small delay to let the POST complete before fetching
+      setTimeout(() => dashboardEvents.emit('log-added', message.data), 300);
+    }
+  }, [startCountdown, stopCountdown, backgroundDbSync]);
+
+  const { isConnected, deviceOnline, reconnect } = useWebSocket({
     onMessage: handleWebSocketMessage,
     onConnect: () => {
-      console.log('WebSocket connected');
-      toast.success('Connected to door lock');
-      fetchStatus();
-      // Sync cards: DB ↔ ESP32
-      syncCards();
+      // Fetch initial status once, then MQTT provides real-time updates
+      if (!initialFetchDone.current) {
+        initialFetchDone.current = true;
+        fetchStatus();
+        syncCards();
+      }
     },
     onDisconnect: () => {
-      console.log('WebSocket disconnected');
-      // Trigger a status fetch to check if ESP32 is truly offline
-      fetchStatus();
+      // MQTT connection lost
     },
-    autoReconnect: true,
-    reconnectInterval: 3000,
   });
 
+  // Fetch initial status on mount (don't wait for MQTT)
   useEffect(() => {
     fetchStatus();
-  }, [fetchStatus]);
-
-  // ── Polling fallback when WebSocket is disconnected but ESP32 reachable ──
-  // Also poll at a slower rate when connected to catch state changes not broadcast via WS
-  useEffect(() => {
-    if (apiError) return;
-    const interval = setInterval(() => {
-      fetchStatus();
-    }, isConnected ? 5000 : 2000);
-    return () => clearInterval(interval);
-  }, [isConnected, apiError, fetchStatus]);
-
-  // ── Auto-retry when ESP32 is offline ──
-  useEffect(() => {
-    if (!apiError || isConnected || isLoading) {
-      setRetryAttempts(0);
-      retryIntervalRef.current = 5;
-      return;
-    }
-    setRetryCountdown(retryIntervalRef.current);
-    const interval = setInterval(() => {
-      setRetryCountdown(prev => {
-        if (prev <= 1) {
-          fetchStatus();
-          setRetryAttempts(a => a + 1);
-          retryIntervalRef.current = Math.min(retryIntervalRef.current + 5, 30);
-          return retryIntervalRef.current;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [apiError, isConnected, isLoading, fetchStatus]);
+    syncCards();
+  }, [fetchStatus, syncCards]);
 
   // ── Manual retry handler ──
   const handleManualRetry = useCallback(() => {
-    setRetryAttempts(prev => prev + 1);
-    retryIntervalRef.current = 5;
-    setRetryCountdown(5);
     fetchStatus();
     reconnect();
   }, [fetchStatus, reconnect]);
@@ -444,7 +386,8 @@ export default function DashboardPage() {
   };
 
   // ── Derived state ──
-  const isEspOffline = !isLoading && (apiError || (!isConnected && status === null));
+  // Device is offline when MQTT says so, or when we couldn't fetch initial status
+  const isEspOffline = !isLoading && (apiError && !deviceOnline);
 
   // ── Card renderer ──
   const renderCard = (id: string): ReactNode => {
@@ -452,7 +395,7 @@ export default function DashboardPage() {
       case 'door-status':
         return <DoorStatusCard status={status} isLoading={isLoading} apiError={apiError} countdown={countdown} autoLockDuration={status?.autoLockDuration || autoLockRef.current} />;
       case 'system-info':
-        return <SystemInfoCard uptimeRaw={status?.uptime} isConnected={isConnected} />;
+        return <SystemInfoCard uptimeRaw={status?.uptime} isConnected={isConnected} sysInfo={sysInfo} />;
       case 'door-controls':
         return <DoorControls onAction={fetchStatus} isLocked={!status?.doorUnlocked} />;
       case 'last-access':
@@ -501,40 +444,26 @@ export default function DashboardPage() {
                 Device Offline
               </h2>
               <p className="text-sm text-center max-w-sm mb-8" style={{ color: 'var(--text-muted)' }}>
-                Cannot connect to ESP32. The device may be powered off, restarting, or out of WiFi range.
+                Cannot connect to ESP32 via MQTT. The device may be powered off, restarting, or disconnected from the network.
               </p>
 
-              {/* Auto-retry countdown ring */}
+              {/* MQTT auto-reconnects — show simple status */}
               <div className="flex flex-col items-center gap-3 mb-8">
-                <div className="relative w-16 h-16">
-                  <svg className="w-16 h-16" viewBox="0 0 64 64" style={{ transform: 'rotate(-90deg)' }}>
-                    <circle cx="32" cy="32" r="28" fill="none" stroke="var(--border)" strokeWidth="3" />
-                    <circle
-                      cx="32" cy="32" r="28" fill="none"
-                      stroke="var(--primary)"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeDasharray={`${2 * Math.PI * 28}`}
-                      strokeDashoffset={`${2 * Math.PI * 28 * (1 - retryCountdown / retryIntervalRef.current)}`}
-                      className="transition-all duration-1000 ease-linear"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-lg font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                      {retryCountdown}
+                {isConnected ? (
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-xl" style={{ background: 'var(--primary-light)' }}>
+                    <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--primary)' }} />
+                    <span className="text-xs font-medium" style={{ color: 'var(--primary)' }}>
+                      MQTT connected — waiting for device...
                     </span>
                   </div>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                    Retrying in {retryCountdown}s
-                  </p>
-                  {retryAttempts > 0 && (
-                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                      Attempt {retryAttempts}
-                    </p>
-                  )}
-                </div>
+                ) : (
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-xl" style={{ background: 'var(--danger-light)' }}>
+                    <div className="w-2 h-2 rounded-full" style={{ background: 'var(--danger)' }} />
+                    <span className="text-xs font-medium" style={{ color: 'var(--danger)' }}>
+                      MQTT disconnected — reconnecting...
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Manual retry button */}
@@ -579,7 +508,7 @@ export default function DashboardPage() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="mt-0.5">•</span>
-                    <span>Confirm the device IP address and API key in Settings</span>
+                    <span>Confirm the MQTT broker is reachable and credentials are correct</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="mt-0.5">•</span>
@@ -666,15 +595,10 @@ export default function DashboardPage() {
           </DndContext>
         ) : (
           <MasonryGrid>
-            {layout.map((id, index) => (
-              <motion.div
-                key={id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: index * 0.06, ease: [0.25, 0.46, 0.45, 0.94] }}
-              >
+            {layout.map((id) => (
+              <div key={id}>
                 {renderCard(id)}
-              </motion.div>
+              </div>
             ))}
           </MasonryGrid>
         )}

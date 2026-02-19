@@ -6,7 +6,6 @@
 
 MFRC522 rfid(RFID_SDA_PIN, RFID_RST_PIN);
 Preferences nvs;
-AsyncWebServer server(WEB_SERVER_PORT);
 
 // ============================================
 // STATE MACHINE
