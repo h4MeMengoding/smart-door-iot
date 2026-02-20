@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
-import { destroySession } from '@/lib/auth';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
+// Auth removed — no-op (Cloudflare Access handles auth)
 export async function POST() {
-  await destroySession();
   return NextResponse.json({ success: true });
 }

@@ -7,32 +7,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendCommand, getCachedStatus, isDeviceOnline, initMqtt } from '@/lib/mqtt';
 import { TOPICS } from '@/lib/mqttTopics';
-import { verifySessionCookie } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-// Verify either session cookie or API key
-async function verifyAuth(request: NextRequest): Promise<boolean> {
-  // Check API key (for iOS Shortcuts)
+// Verify API key (for iOS Shortcuts) — dashboard auth handled by Cloudflare Access
+function verifyApiKey(request: NextRequest): boolean {
   const apiKey = request.headers.get('X-API-Key') || request.headers.get('x-api-key');
-  if (apiKey && apiKey === process.env.ESP32_API_KEY) {
-    return true;
-  }
-
-  // Check session cookie (for dashboard) — full HMAC verification
-  const sessionCookie = request.cookies.get('smart-door-session');
-  if (sessionCookie?.value) {
-    return await verifySessionCookie(sessionCookie.value);
-  }
-
-  return false;
+  return !!(apiKey && apiKey === process.env.ESP32_API_KEY);
 }
 
 export async function GET(request: NextRequest) {
-  if (!await verifyAuth(request)) {
-    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-  }
-
+  // Auth handled by Cloudflare Access (or API key for iOS Shortcuts)
   initMqtt();
 
   // Return cached status if available, otherwise request from ESP32
@@ -71,10 +56,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!await verifyAuth(request)) {
-    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
-  }
-
+  // Auth handled by Cloudflare Access (or API key for iOS Shortcuts)
   initMqtt();
 
   try {

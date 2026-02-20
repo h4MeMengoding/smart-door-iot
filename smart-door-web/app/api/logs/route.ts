@@ -1,26 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { addAccessLog, getCardByUid, validateApiKey, addSystemEvent } from '@/lib/db';
+import { addAccessLog, getCardByUid, addSystemEvent } from '@/lib/db';
 import { prisma } from '@/lib/prisma';
 import { logEvents } from '@/lib/events';
-import { verifySessionCookie } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-// POST /api/logs - Add new access log (from ESP32 via API key, or dashboard via session)
+// POST /api/logs - Add new access log (no auth — Cloudflare Access protects the domain)
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = request.headers.get('x-api-key');
-    const hasApiKey = validateApiKey(apiKey);
-    const sessionCookie = request.cookies.get('smart-door-session');
-    const hasSession = sessionCookie?.value ? await verifySessionCookie(sessionCookie.value) : false;
-
-    if (!hasApiKey && !hasSession) {
-      return NextResponse.json(
-        { success: false, message: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     const body = await request.json();
     const { cardUid, action, success, accessType: clientAccessType } = body;
 

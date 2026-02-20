@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DoorStatus, Card as CardType } from '@/lib/types';
+import { DoorStatus, Card as CardType, AccessLog } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { CreditCard, Clock, Globe, Fingerprint } from 'lucide-react';
 import { formatUid, formatRelativeTime } from '@/lib/utils';
@@ -13,105 +13,66 @@ interface LastAccessCardProps {
 
 type AccessSource = 'RFID' | 'WEB' | 'TOUCH' | 'UNKNOWN';
 
-function detectAccessSource(lastEvent: string | undefined): AccessSource {
-  if (!lastEvent) return 'UNKNOWN';
-  if (lastEvent.includes('via API')) return 'WEB';
-  if (lastEvent.includes('Touch sensor') || lastEvent.includes('touch')) return 'TOUCH';
-  if (lastEvent.includes('card') || lastEvent.includes('Card') || lastEvent.includes('Valid')) return 'RFID';
-  return 'UNKNOWN';
-}
-
 export function LastAccessCard({ status }: LastAccessCardProps) {
-  const [cardsMap, setCardsMap] = useState<Record<string, string>>({});
-  const [lastEventTime, setLastEventTime] = useState<string | null>(() => {
-    // Restore persisted timestamp on mount
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('lastAccessTime');
-    }
-    return null;
-  });
+  const [lastLog, setLastLog] = useState<AccessLog | null>(null);
   const [, setTick] = useState(0);
-  const prevEventRef = useRef<string | null>(null);
-  const initialMountRef = useRef(true);
+  const fetchingRef = useRef(false);
 
-  const fetchCardNames = useCallback(async () => {
+  const fetchLastLog = useCallback(async () => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
     try {
-      const response = await fetch('/api/cards');
+      const response = await fetch('/api/logs');
       if (!response.ok) return;
-      const cards: CardType[] = await response.json();
-      const map: Record<string, string> = {};
-      cards.forEach((card) => {
-        if (card.nickname) {
-          map[card.uid.toUpperCase()] = card.nickname;
-          map[card.uid.replace(/:/g, '').toUpperCase()] = card.nickname;
-        }
-      });
-      setCardsMap(map);
+      const logs: AccessLog[] = await response.json();
+      if (logs.length > 0) {
+        setLastLog(logs[0]); // Already sorted desc by createdAt
+      }
     } catch {
       // Silently fail
+    } finally {
+      fetchingRef.current = false;
     }
   }, []);
 
+  // Fetch on mount
   useEffect(() => {
-    fetchCardNames();
-  }, [fetchCardNames]);
+    fetchLastLog();
+  }, [fetchLastLog]);
 
+  // Refetch when new logs are added or door status changes
   useEffect(() => {
-    const u1 = dashboardEvents.on('cards-changed', fetchCardNames);
-    const u2 = dashboardEvents.on('card-renamed', fetchCardNames);
-    return () => { u1(); u2(); };
-  }, [fetchCardNames]);
+    const unsub1 = dashboardEvents.on('log-added', () => {
+      // Small delay to let DB write complete
+      setTimeout(fetchLastLog, 500);
+    });
+    return () => { unsub1(); };
+  }, [fetchLastLog]);
 
-  // Track when lastEvent changes to record timestamp
+  // Refetch when door status lastEvent changes (new unlock/lock)
+  const prevEventRef = useRef<string | null>(null);
   useEffect(() => {
     const currentEvent = status?.lastEvent || null;
-
-    // On initial mount: just record the current event as baseline without overwriting persisted time
-    if (initialMountRef.current) {
-      initialMountRef.current = false;
-      prevEventRef.current = currentEvent;
-      return;
-    }
-
     if (currentEvent && currentEvent !== prevEventRef.current && currentEvent !== 'System ready') {
-      const now = new Date().toISOString();
-      setLastEventTime(now);
-      try { localStorage.setItem('lastAccessTime', now); } catch {}
+      // Delay to let the log POST complete
+      setTimeout(fetchLastLog, 1000);
     }
     prevEventRef.current = currentEvent;
-  }, [status?.lastEvent, status?.lastCard]);
+  }, [status?.lastEvent, fetchLastLog]);
 
   // Tick every 10s to update relative time display
   useEffect(() => {
-    if (!lastEventTime) return;
+    if (!lastLog) return;
     const interval = setInterval(() => setTick(t => t + 1), 10000);
     return () => clearInterval(interval);
-  }, [lastEventTime]);
+  }, [lastLog]);
 
-  const getCardDisplayName = (uid: string): { name: string | null; uid: string } => {
-    if (!uid) return { name: null, uid: '-' };
-    const normalizedUid = uid.replace(/:/g, '').toUpperCase();
-    const upperUid = uid.toUpperCase();
-    const nickname = cardsMap[upperUid] || cardsMap[normalizedUid];
-    return { name: nickname || null, uid: formatUid(uid) };
-  };
-
-  const source = detectAccessSource(status?.lastEvent);
-  const cardInfo = (source === 'RFID' && status?.lastCard) ? getCardDisplayName(status.lastCard) : null;
-
-  // Refetch card names whenever status changes (so name is always up-to-date)
-  useEffect(() => {
-    if (status?.lastCard) {
-      fetchCardNames();
-    }
-  }, [status?.lastCard, status?.lastEvent, fetchCardNames]);
-
-  const hasAccess = status?.lastEvent && status.lastEvent !== 'System ready';
+  // Derive source from last log
+  const source: AccessSource = lastLog?.accessType as AccessSource || 'UNKNOWN';
+  const hasAccess = !!lastLog;
 
   // Source-specific icon
   const SourceIcon = source === 'WEB' ? Globe : source === 'TOUCH' ? Fingerprint : CreditCard;
-  const sourceColor = source === 'WEB' ? 'var(--primary)' : source === 'TOUCH' ? 'var(--warning)' : 'var(--secondary)';
-  const sourceBg = source === 'WEB' ? 'var(--primary-light)' : source === 'TOUCH' ? 'color-mix(in srgb, var(--warning) 15%, transparent)' : 'var(--secondary-light)';
 
   return (
     <Card>
@@ -153,15 +114,15 @@ export function LastAccessCard({ status }: LastAccessCardProps) {
                     Physical touch exit
                   </p>
                 </>
-              ) : cardInfo ? (
+              ) : lastLog?.cardUid ? (
                 <>
                   <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Card Name</p>
                   <p className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-                    {cardInfo.name || cardInfo.uid}
+                    {lastLog.cardNickname || formatUid(lastLog.cardUid)}
                   </p>
-                  {cardInfo.name && (
+                  {lastLog.cardNickname && (
                     <p className="text-xs font-mono mt-1" style={{ color: 'var(--text-muted)' }}>
-                      {cardInfo.uid}
+                      {formatUid(lastLog.cardUid)}
                     </p>
                   )}
                 </>
@@ -169,19 +130,21 @@ export function LastAccessCard({ status }: LastAccessCardProps) {
                 <>
                   <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Event</p>
                   <p className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {status?.lastEvent}
+                    {lastLog?.action === 'unlock' ? 'Door Unlocked' : 'Access Denied'}
                   </p>
                 </>
               )}
             </div>
             <div className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--text-muted)' }}>
               <Clock className="w-3.5 h-3.5" />
-              <span>{lastEventTime ? formatRelativeTime(lastEventTime) : 'Just now'}</span>
+              <span>{lastLog?.timestamp ? formatRelativeTime(lastLog.timestamp) : 'Just now'}</span>
             </div>
-            {status?.lastEvent && (
+            {lastLog && (
               <div className="pt-3.5" style={{ borderTop: '1px solid var(--border)' }}>
                 <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Action</p>
-                <p className="text-[13px] mt-1" style={{ color: 'var(--text-secondary)' }}>{status.lastEvent}</p>
+                <p className="text-[13px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                  {lastLog.success ? 'Access granted' : 'Access denied'} — {source}
+                </p>
               </div>
             )}
           </div>

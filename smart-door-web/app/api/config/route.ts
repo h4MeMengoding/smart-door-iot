@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSystemConfig, setSystemConfig, getCardDelays, upsertCardDelay, deleteCardDelay, getCardDelaySchedules, upsertCardDelaySchedule, deleteCardDelaySchedule, deleteAllCardDelaySchedules, bulkUpsertCardDelaySchedule, validateApiKey } from '@/lib/db';
-import { verifySessionCookie } from '@/lib/auth';
+import { getSystemConfig, setSystemConfig, getCardDelays, upsertCardDelay, deleteCardDelay, getCardDelaySchedules, upsertCardDelaySchedule, deleteCardDelaySchedule, deleteAllCardDelaySchedules, bulkUpsertCardDelaySchedule } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,22 +39,9 @@ export async function GET() {
   }
 }
 
-// PUT /api/config - Update system config
+// PUT /api/config - Update system config (auth handled by Cloudflare Access)
 export async function PUT(request: NextRequest) {
   try {
-    // Accept either API key (ESP32/Shortcuts) or session cookie (dashboard)
-    const apiKey = request.headers.get('x-api-key');
-    const hasApiKey = validateApiKey(apiKey);
-    const sessionCookie = request.cookies.get('smart-door-session');
-    const hasSession = sessionCookie?.value ? await verifySessionCookie(sessionCookie.value) : false;
-
-    if (!hasApiKey && !hasSession) {
-      return NextResponse.json(
-        { success: false, message: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     const body = await request.json();
     const { autoLockDuration, cardDelay, cardSchedule, bulkSchedule, removeSchedule } = body;
 

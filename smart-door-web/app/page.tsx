@@ -240,8 +240,20 @@ export default function DashboardPage() {
             const source = detectAccessSource(newStatus.lastEvent);
             if (source.accessType === 'WEB') {
               toast.success('Door unlocked via web');
+              // Ensure WEB unlock is logged to DB (ESP32 may not send access_log for API unlocks)
+              fetch('/api/logs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'unlock', success: true, accessType: 'WEB' }),
+              }).catch(() => {});
             } else if (source.accessType === 'TOUCH') {
               toast.success('Door unlocked via touch');
+              // Ensure TOUCH unlock is logged to DB
+              fetch('/api/logs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'unlock', success: true, accessType: 'TOUCH' }),
+              }).catch(() => {});
             } else {
               toast.success('Door unlocked');
             }
@@ -587,7 +599,9 @@ export default function DashboardPage() {
                     index={index}
                     isEditing={isEditing}
                   >
-                    {renderCard(id)}
+                    <div className={id === 'door-controls' ? 'hidden md:block' : ''}>
+                      {renderCard(id)}
+                    </div>
                   </SortableCard>
                 ))}
               </MasonryGrid>
@@ -596,7 +610,7 @@ export default function DashboardPage() {
         ) : (
           <MasonryGrid>
             {layout.map((id) => (
-              <div key={id}>
+              <div key={id} className={id === 'door-controls' ? 'hidden md:block' : ''}>
                 {renderCard(id)}
               </div>
             ))}

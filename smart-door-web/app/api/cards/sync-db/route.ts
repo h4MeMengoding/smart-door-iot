@@ -50,8 +50,9 @@ export async function POST(request: NextRequest) {
     const toAdd = validCards.filter((uid) => !dbUids.has(uid.toUpperCase()));
 
     // Cards to remove from DB (in DB but not in ESP) — only unnamed ones
+    // Named cards are preserved even if ESP32 doesn't report them (prevents name loss)
     const toRemove = dbCards.filter(
-      (c) => c.uid && !espUids.has(c.uid.toUpperCase()) && !isMasterCardUid(c.uid)
+      (c) => c.uid && !espUids.has(c.uid.toUpperCase()) && !isMasterCardUid(c.uid) && !c.isNamed
     );
 
     // Perform upserts for new cards — BATCHED in a single transaction
