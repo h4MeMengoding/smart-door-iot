@@ -74,6 +74,9 @@ export function DoorStatusCard({ status, isLoading, apiError, countdown, autoLoc
     REGISTRATION_MODE: 'warning',
     ERROR: 'danger',
   };
+  const rawState = status.state ?? 'UNKNOWN';
+  const stateVariant = (stateColors[rawState] ?? 'default') as 'success' | 'danger' | 'warning' | 'info' | 'default';
+  const stateLabel = typeof rawState === 'string' ? rawState.replace(/_/g, ' ') : String(rawState);
 
   return (
     <Card
@@ -166,8 +169,8 @@ export function DoorStatusCard({ status, isLoading, apiError, countdown, autoLoc
           {/* Auto-lock countdown text when unlocked */}
           <div className="flex items-center justify-between">
             <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>System State</span>
-            <Badge variant={stateColors[status.state] as 'success' | 'danger' | 'warning' | 'info' | 'default'}>
-              {status.state.replace(/_/g, ' ')}
+            <Badge variant={stateVariant}>
+              {stateLabel}
             </Badge>
           </div>
           <div className="flex items-center justify-between">

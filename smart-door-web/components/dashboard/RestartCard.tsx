@@ -17,7 +17,8 @@ const INTERVAL_OPTIONS = [1, 2, 3, 4, 6, 8, 12, 24];
 export function RestartCard() {
   const [state, setState] = useState<RestartState>('idle');
   const [schedule, setSchedule] = useState<ScheduledRestartConfig>({ mode: 0, hour: 3, interval: 6 });
-  const [pendingSchedule, setPendingSchedule] = useState<ScheduledRestartConfig | null>(null);
+  type PendingSchedule = { mode: number; hour: number; interval?: number };
+  const [pendingSchedule, setPendingSchedule] = useState<PendingSchedule | null>(null);
   const [showSchedulePicker, setShowSchedulePicker] = useState(false);
   const [isLoadingSchedule, setIsLoadingSchedule] = useState(true);
   const [isSavingSchedule, setIsSavingSchedule] = useState(false);
@@ -117,16 +118,30 @@ export function RestartCard() {
   };
 
   const handleOpenSchedule = () => {
-    setPendingSchedule({ ...schedule });
+    setPendingSchedule({ mode: schedule.mode, hour: schedule.hour, interval: schedule.interval ?? undefined });
     setShowSchedulePicker(true);
   };
 
   const handleSaveSchedule = async () => {
     if (!pendingSchedule) return;
+    // Validate: for every-hours mode, ensure interval explicitly selected
+    if (pendingSchedule.mode === 2 && (!pendingSchedule.interval || pendingSchedule.interval <= 0)) {
+      toast.error('Please choose interval hours before saving');
+      return;
+    }
     setIsSavingSchedule(true);
     try {
-      const result = await api.setScheduledRestart(pendingSchedule);
-      setSchedule(pendingSchedule);
+      // Cast to ScheduledRestartConfig for API call (interval guaranteed when mode=2)
+      const payload: ScheduledRestartConfig = {
+        mode: pendingSchedule.mode,
+        hour: pendingSchedule.hour,
+        interval: pendingSchedule.interval ?? 0,
+      };
+      const result = await api.setScheduledRestart(payload);
+      // Only update schedule when API reports success
+      if (result && result.success) {
+        setSchedule(payload);
+      }
       setShowSchedulePicker(false);
       setPendingSchedule(null);
       if (pendingSchedule.mode === 0) {
@@ -269,7 +284,7 @@ export function RestartCard() {
                 variant="primary"
                 size="lg"
                 className="flex-1 rounded-2xl"
-                disabled={isSavingSchedule}
+                disabled={isSavingSchedule || (pendingSchedule?.mode === 2 && (!pendingSchedule.interval || pendingSchedule.interval <= 0))}
               >
                 {isSavingSchedule ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />

@@ -59,11 +59,19 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
   const rfidCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // --- Schedule Restart state ---
-  const [schedMode, setSchedMode] = useState(0); // 0=off, 1=at_hour, 2=every_hours
-  const [schedHour, setSchedHour] = useState(3);
-  const [schedInterval, setSchedInterval] = useState(6);
+  // Active schedule as reported from ESP32
+  const [schedActiveMode, setSchedActiveMode] = useState(0); // 0=off, 1=at_hour, 2=every_hours
+  const [schedActiveHour, setSchedActiveHour] = useState(3);
+  const [schedActiveInterval, setSchedActiveInterval] = useState(6);
+  const [schedCountdown, setSchedCountdown] = useState<string | null>(null);
+  const schedCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isSavingSched, setIsSavingSched] = useState(false);
   const [schedLoaded, setSchedLoaded] = useState(false);
+  // Draft/editing states (used while user configures before saving)
+  const [schedEditing, setSchedEditing] = useState(false);
+  const [draftMode, setDraftMode] = useState(0);
+  const [draftHour, setDraftHour] = useState(3);
+  const [draftInterval, setDraftInterval] = useState<number | undefined>(undefined);
 
   const togglePanel = (panel: ActivePanel) => {
     setActivePanel(prev => prev === panel ? null : panel);
@@ -108,9 +116,13 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
       (async () => {
         try {
           const config = await api.getScheduledRestart();
-          setSchedMode(config.mode);
-          setSchedHour(config.hour || 3);
-          setSchedInterval(config.interval || 6);
+          // initialize active schedule and draft values
+          setSchedActiveMode(config.mode);
+          setSchedActiveHour(config.hour || 3);
+          setSchedActiveInterval(config.interval || 6);
+          setDraftMode(config.mode);
+          setDraftHour(config.hour || 3);
+          setDraftInterval(config.interval || undefined);
           setSchedLoaded(true);
         } catch {
           // ESP32 offline
@@ -118,6 +130,67 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
       })();
     }
   }, [schedLoaded]);
+
+  // Countdown for active scheduled restart — update every second
+  useEffect(() => {
+    if (schedCountdownRef.current) clearInterval(schedCountdownRef.current);
+
+    if (schedActiveMode === 0) {
+      setSchedCountdown(null);
+      return;
+    }
+
+    const update = async () => {
+      try {
+        let secondsUntil = 0;
+
+        if (schedActiveMode === 1) {
+          const espTime = await api.getEspTime();
+          const currentHour = espTime.hour;
+          const currentMin = espTime.minute;
+          const currentSec = espTime.second;
+          // at_hour mode: compute next occurrence of hour (wall clock)
+          let target = schedActiveHour;
+          let hoursUntil = target - currentHour;
+          if (hoursUntil < 0) hoursUntil += 24;
+          secondsUntil = hoursUntil * 3600 - currentMin * 60 - currentSec;
+          if (secondsUntil < 0) secondsUntil = 0;
+        } else if (schedActiveMode === 2) {
+          // every_hours mode: compute based on device uptime (ESP32 restarts after uptime crosses interval)
+          const sys = await api.getSystemInfo();
+          // sys.uptime expected like "123s"
+          const uptimeRaw = sys?.uptime || '';
+          const parsed = parseInt(uptimeRaw.replace('s','')) || 0;
+          const uptimeSec = parsed;
+          const intervalSec = (schedActiveInterval || 1) * 3600;
+          if (intervalSec <= 0) {
+            secondsUntil = 0;
+          } else {
+            const mod = uptimeSec % intervalSec;
+            secondsUntil = mod === 0 ? intervalSec : (intervalSec - mod);
+          }
+        }
+
+        const h = Math.floor(secondsUntil / 3600);
+        const m = Math.floor((secondsUntil % 3600) / 60);
+        const s = Math.floor(secondsUntil % 60);
+
+        if (h > 0) setSchedCountdown(`${h}h ${m}m ${s}s`);
+        else if (m > 0) setSchedCountdown(`${m}m ${s}s`);
+        else setSchedCountdown(`${s}s`);
+      } catch {
+        setSchedCountdown(null);
+      }
+    };
+
+    update();
+    schedCountdownRef.current = setInterval(update, 1000);
+
+    return () => {
+      if (schedCountdownRef.current) clearInterval(schedCountdownRef.current);
+      schedCountdownRef.current = null;
+    };
+  }, [schedActiveMode, schedActiveHour, schedActiveInterval]);
 
   // ── Add Card handlers ──
   const handleToggleRegistration = async () => {
@@ -275,19 +348,22 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
   const handleSaveScheduleRestart = async () => {
     setIsSavingSched(true);
     try {
-      const result = await api.setScheduledRestart({
-        mode: schedMode,
-        hour: schedHour,
-        interval: schedInterval,
-      });
+      const payload = { mode: draftMode, hour: draftHour, interval: draftInterval ?? 0 };
+      const result = await api.setScheduledRestart(payload);
       if (result.success) {
-        const desc = schedMode === 0
+        setSchedActiveMode(payload.mode);
+        setSchedActiveHour(payload.hour);
+        setSchedActiveInterval(payload.interval);
+        setSchedEditing(false);
+        const desc = payload.mode === 0
           ? 'Scheduled restart disabled'
-          : schedMode === 1
-          ? `Restart scheduled at ${schedHour}:00 daily`
-          : `Restart every ${schedInterval} hours`;
+          : payload.mode === 1
+          ? `Restart scheduled at ${payload.hour}:00 daily`
+          : `Restart every ${payload.interval} hours`;
         toast.success(desc);
         logSystemEvent('scheduled_restart', desc);
+      } else {
+        toast.error('Failed to save schedule');
       }
     } catch {
       toast.error('Failed to save schedule');
@@ -299,9 +375,10 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
   const handleCancelSchedule = async () => {
     setIsSavingSched(true);
     try {
-      const result = await api.setScheduledRestart({ mode: 0, hour: schedHour, interval: schedInterval });
+      const result = await api.setScheduledRestart({ mode: 0, hour: schedActiveHour, interval: schedActiveInterval });
       if (result.success) {
-        setSchedMode(0);
+        setSchedActiveMode(0);
+        setSchedEditing(false);
         toast.success('Scheduled restart disabled');
         logSystemEvent('scheduled_restart', 'Scheduled restart disabled');
       }
@@ -313,8 +390,8 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
   };
 
   const getScheduleDescription = () => {
-    if (schedMode === 1) return `Daily at ${schedHour.toString().padStart(2, '0')}:00 WIB`;
-    if (schedMode === 2) return `Every ${schedInterval} hour${schedInterval > 1 ? 's' : ''}`;
+    if (schedActiveMode === 1) return `Daily at ${schedActiveHour.toString().padStart(2, '0')}:00 WIB`;
+    if (schedActiveMode === 2) return `Every ${schedActiveInterval} hour${schedActiveInterval > 1 ? 's' : ''}`;
     return 'Disabled';
   };
 
@@ -492,7 +569,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
           >
             <Power className="w-4 h-4" />
             <span className="text-[11px] font-medium">Restart</span>
-            {schedMode > 0 && (
+            {schedActiveMode > 0 && (
               <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ background: 'var(--danger)' }} />
             )}
           </button>
@@ -683,40 +760,63 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
               >
                 {/* Schedule Status Banner */}
                 <div className="flex items-start gap-2 p-2.5 rounded-xl" style={{
-                  background: schedMode > 0 ? 'color-mix(in srgb, var(--primary) 10%, transparent)' : 'var(--bg-surface)',
-                  border: `1px solid ${schedMode > 0 ? 'color-mix(in srgb, var(--primary) 25%, transparent)' : 'var(--border)'}`,
+                  background: schedActiveMode > 0 ? 'color-mix(in srgb, var(--primary) 10%, transparent)' : 'var(--bg-surface)',
+                  border: `1px solid ${schedActiveMode > 0 ? 'color-mix(in srgb, var(--primary) 25%, transparent)' : 'var(--border)'}`,
                 }}>
                   <Clock className="w-4 h-4 shrink-0 mt-0.5" style={{
-                    color: schedMode > 0 ? 'var(--primary)' : 'var(--text-muted)',
+                    color: schedActiveMode > 0 ? 'var(--primary)' : 'var(--text-muted)',
                   }} />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold" style={{
-                      color: schedMode > 0 ? 'var(--primary)' : 'var(--text-secondary)',
+                      color: schedActiveMode > 0 ? 'var(--primary)' : 'var(--text-secondary)',
                     }}>
-                      Schedule: {schedMode > 0 ? 'Active' : 'Off'}
+                      Schedule: {schedActiveMode > 0 ? 'Active' : 'Off'}
                     </p>
                     <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                      {schedMode > 0
+                      {schedActiveMode > 0
                         ? getScheduleDescription()
                         : 'No automatic restart configured.'}
                     </p>
                   </div>
+                  {/* Countdown on the right */}
+                  <div className="ml-3 flex items-center" style={{ minWidth: 90, justifyContent: 'flex-end' }}>
+                    {schedActiveMode > 0 && schedCountdown && (
+                      <div className="text-[12px] font-medium" style={{ color: 'var(--text-muted)' }}>
+                        {schedCountdown}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                {/* If schedule is active: show cancel button, no editing */}
-                {schedMode > 0 ? (
-                  <Button
-                    onClick={handleCancelSchedule}
-                    isLoading={isSavingSched}
-                    variant="secondary"
-                    size="sm"
-                    className="w-full"
-                  >
-                    <X className="w-3.5 h-3.5 mr-1.5" />
-                    Cancel Schedule
-                  </Button>
+                {/* If schedule is active and not editing: show cancel + edit */}
+                {schedActiveMode > 0 && !schedEditing ? (
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleCancelSchedule}
+                      isLoading={isSavingSched}
+                      variant="secondary"
+                      size="sm"
+                      className="flex-1"
+                    >
+                      <X className="w-3.5 h-3.5 mr-1.5" />
+                      Cancel Schedule
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setSchedEditing(true);
+                        setDraftMode(schedActiveMode);
+                        setDraftHour(schedActiveHour);
+                        setDraftInterval(schedActiveInterval);
+                      }}
+                      variant="secondary"
+                      size="sm"
+                      className="w-36"
+                    >
+                      Edit
+                    </Button>
+                  </div>
                 ) : (
-                  /* If schedule is off: show config form */
+                  /* If schedule is off or editing: show config form */
                   <>
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Schedule Type</label>
@@ -727,12 +827,12 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                         ].map((opt) => (
                           <button
                             key={opt.value}
-                            onClick={() => setSchedMode(opt.value)}
+                            onClick={() => setDraftMode(opt.value)}
                             className="px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all"
                             style={{
-                              background: schedMode === opt.value ? 'var(--primary-light)' : 'var(--bg-surface)',
-                              color: schedMode === opt.value ? 'var(--primary)' : 'var(--text-muted)',
-                              border: `1px solid ${schedMode === opt.value ? 'var(--primary)' : 'var(--border)'}`,
+                              background: draftMode === opt.value ? 'var(--primary-light)' : 'var(--bg-surface)',
+                              color: draftMode === opt.value ? 'var(--primary)' : 'var(--text-muted)',
+                              border: `1px solid ${draftMode === opt.value ? 'var(--primary)' : 'var(--border)'}`,
                             }}
                           >
                             {opt.label}
@@ -742,12 +842,12 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                     </div>
 
                     {/* At hour config */}
-                    {schedMode === 1 && (
+                    {draftMode === 1 && (
                       <div className="space-y-1.5">
                         <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Restart at</label>
                         <select
-                          value={schedHour}
-                          onChange={(e) => setSchedHour(parseInt(e.target.value))}
+                          value={draftHour}
+                          onChange={(e) => setDraftHour(parseInt(e.target.value))}
                           className="w-full px-2.5 py-1.5 rounded-lg text-xs"
                           style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
                         >
@@ -762,15 +862,16 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                     )}
 
                     {/* Every X hours config */}
-                    {schedMode === 2 && (
+                    {draftMode === 2 && (
                       <div className="space-y-1.5">
                         <label className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Restart every</label>
                         <select
-                          value={schedInterval}
-                          onChange={(e) => setSchedInterval(parseInt(e.target.value))}
+                          value={draftInterval ?? ''}
+                          onChange={(e) => setDraftInterval(parseInt(e.target.value))}
                           className="w-full px-2.5 py-1.5 rounded-lg text-xs"
                           style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
                         >
+                          <option value="" disabled>Choose interval</option>
                           {[1, 2, 3, 4, 6, 8, 12, 24].map((h) => (
                             <option key={h} value={h}>{h} hour{h > 1 ? 's' : ''}</option>
                           ))}
@@ -781,13 +882,34 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                       </div>
                     )}
 
-                    {schedMode > 0 && (
+                    {(draftMode > 0) && (
                       <Button
-                        onClick={handleSaveScheduleRestart}
+                        onClick={async () => {
+                          setIsSavingSched(true);
+                          try {
+                            const payload = { mode: draftMode, hour: draftHour, interval: draftInterval ?? 0 };
+                            const result = await api.setScheduledRestart(payload);
+                            if (result.success) {
+                              setSchedActiveMode(payload.mode);
+                              setSchedActiveHour(payload.hour);
+                              setSchedActiveInterval(payload.interval);
+                              setSchedEditing(false);
+                              toast.success(payload.mode === 1 ? `Restart scheduled at ${String(payload.hour).padStart(2,'0')}:00` : `Restart every ${payload.interval} hours`);
+                              logSystemEvent('scheduled_restart', payload.mode === 1 ? `Restart scheduled at ${payload.hour}:00` : `Restart every ${payload.interval}h`);
+                            } else {
+                              toast.error('Failed to save schedule');
+                            }
+                          } catch {
+                            toast.error('Failed to save schedule');
+                          } finally {
+                            setIsSavingSched(false);
+                          }
+                        }}
                         isLoading={isSavingSched}
                         variant="primary"
                         size="sm"
                         className="w-full"
+                        disabled={draftMode === 2 && (!draftInterval || draftInterval <= 0)}
                       >
                         <Clock className="w-3.5 h-3.5 mr-1.5" />
                         Activate Schedule

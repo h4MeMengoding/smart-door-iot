@@ -173,10 +173,17 @@ function getClient(): mqtt.MqttClient {
         cachedSystemInfo = payload;
       }
 
-      // Process access log events — notify listeners only (browser POST handles persistence)
+      // Process access log events — persist on server as fallback
       if (topic === TOPICS.EVENT_ACCESS_LOG) {
-        // No server-side persistence here — browser POST to /api/logs handles it
-        // This avoids duplicate entries from both paths running simultaneously
+        // Persist access logs server-side so events aren't lost when no dashboard is open.
+        // Keep this non-blocking and defensive to avoid interfering with MQTT message flow.
+        try {
+          void processAccessLog(payload as MqttAccessLogEvent).catch((err: Error) => {
+            console.error('[MQTT] processAccessLog error:', err.message);
+          });
+        } catch (err) {
+          console.error('[MQTT] processAccessLog sync error:', (err as Error).message);
+        }
       }
 
       // Notify all event listeners
@@ -297,39 +304,94 @@ async function processAccessLog(event: MqttAccessLogEvent) {
   // Dynamic import to avoid circular dependencies
   const { addAccessLog, upsertCard } = await import('./db');
   const { logEvents } = await import('./events');
+  const { prisma } = await import('./prisma');
 
-  // Upsert card credential
-  if (event.cardUid && event.cardUid !== 'MQTT' && event.cardUid !== 'TOUCH') {
-    await upsertCard(event.cardUid);
+  // Normalize fields
+  const uid = event.cardUid || null;
+  const accessType = (event.accessType || 'RFID') as string;
+  const accessResult = event.success ? 'granted' : 'denied';
+
+  // Debug logging for traceability
+  try {
+    console.log('[MQTT] Received access_log:', { uid, accessType, accessResult, isoTimestamp: event.isoTimestamp });
+  } catch {}
+
+  // Deduplicate: if an identical log exists within a small time window, skip insertion.
+  try {
+    let timestamp = event.isoTimestamp ? new Date(event.isoTimestamp) : new Date();
+    if (isNaN(timestamp.getTime())) timestamp = new Date();
+    const windowMs = 5000; // 5 seconds
+    const start = new Date(timestamp.getTime() - windowMs);
+    const end = new Date(timestamp.getTime() + windowMs);
+
+    const existing = await prisma.accessLog.findFirst({
+      where: {
+        uid: uid,
+        accessType: accessType,
+        accessResult: accessResult,
+        createdAt: {
+          gte: start,
+          lte: end,
+        },
+      },
+    });
+
+    if (existing) {
+      console.log('[MQTT] Duplicate access_log detected — skipping insert', { existingId: existing.id });
+      // Still emit real-time event so connected dashboards update
+      logEvents.emit({
+        id: existing.id,
+        timestamp: existing.createdAt.toISOString(),
+        cardUid: existing.uid,
+        action: event.action as 'unlock' | 'denied' | 'registered',
+        success: event.success,
+        accessType: accessType as 'RFID' | 'WEB' | 'TOUCH',
+      });
+      return;
+    }
+  } catch (err) {
+    console.error('[MQTT] access_log dedupe check failed:', (err as Error).message);
+    // proceed to attempt insert
+  }
+
+  // Upsert card credential (non-blocking critical path)
+  try {
+    if (uid && uid !== 'MQTT' && uid !== 'TOUCH') {
+      await upsertCard(uid);
+    }
+  } catch (err) {
+    console.error('[MQTT] upsertCard error:', (err as Error).message);
   }
 
   // Create access log entry
-  const log = await addAccessLog({
-    uid: event.cardUid || null,
-    accessType: event.accessType || 'RFID',
-    accessResult: event.success ? 'granted' : 'denied',
-  });
+  let log = null as null | { id: string; createdAt: Date; uid: string | null };
+  try {
+    log = await addAccessLog({ uid, accessType, accessResult });
+  } catch (err) {
+    console.error('[MQTT] addAccessLog error:', (err as Error).message);
+  }
 
   // Emit for real-time polling
-  if (log) {
-    logEvents.emit({
-      id: log.id,
-      timestamp: log.createdAt.toISOString(),
-      cardUid: log.uid,
-      action: event.action as 'unlock' | 'denied' | 'registered',
-      success: event.success,
-      accessType: event.accessType as 'RFID' | 'WEB' | 'TOUCH',
-    });
+  try {
+    if (log) {
+      logEvents.emit({
+        id: log.id,
+        timestamp: log.createdAt.toISOString(),
+        cardUid: log.uid,
+        action: event.action as 'unlock' | 'denied' | 'registered',
+        success: event.success,
+        accessType: accessType as 'RFID' | 'WEB' | 'TOUCH',
+      });
+    }
+  } catch (err) {
+    // Ignore
   }
 
   // Create system event
   try {
     const { addSystemEvent } = await import('./db');
-    await addSystemEvent(
-      event.success ? 'access_granted' : 'access_denied',
-      `Card ${event.cardUid || 'unknown'} - ${event.action} (${event.accessType})`
-    );
-  } catch {
+    await addSystemEvent(event.success ? 'access_granted' : 'access_denied', `Card ${event.cardUid || 'unknown'} - ${event.action} (${event.accessType})`);
+  } catch (err) {
     // Non-critical
   }
 }
