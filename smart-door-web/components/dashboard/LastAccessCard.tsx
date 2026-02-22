@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { CreditCard, Clock, Globe, Fingerprint } from 'lucide-react';
 import { formatUid, formatRelativeTime } from '@/lib/utils';
 import { dashboardEvents } from '@/lib/dashboardEvents';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 
 interface LastAccessCardProps {
   status: DoorStatus | null;
@@ -14,6 +15,7 @@ interface LastAccessCardProps {
 type AccessSource = 'RFID' | 'WEB' | 'TOUCH' | 'UNKNOWN';
 
 export function LastAccessCard({ status }: LastAccessCardProps) {
+  const isMobile = useMediaQuery('(max-width: 768px)');
   const [lastLog, setLastLog] = useState<AccessLog | null>(null);
   const [, setTick] = useState(0);
   const fetchingRef = useRef(false);
@@ -86,7 +88,7 @@ export function LastAccessCard({ status }: LastAccessCardProps) {
           </div>
           <div>
             <CardTitle>Last Access</CardTitle>
-            <CardDescription>Most recent entry event</CardDescription>
+            {isMobile && <CardDescription>Recent entry event</CardDescription>}
           </div>
         </div>
       </CardHeader>
@@ -94,59 +96,20 @@ export function LastAccessCard({ status }: LastAccessCardProps) {
         {hasAccess ? (
           <div className="space-y-3.5">
             <div>
-              {source === 'WEB' ? (
-                <>
-                  <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Access Source</p>
-                  <p className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-                    Web Dashboard
-                  </p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                    Remote unlock via browser
-                  </p>
-                </>
-              ) : source === 'TOUCH' ? (
-                <>
-                  <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Access Source</p>
-                  <p className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-                    Touch Sensor
-                  </p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                    Physical touch exit
-                  </p>
-                </>
-              ) : lastLog?.cardUid ? (
-                <>
-                  <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Card Name</p>
-                  <p className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-                    {lastLog.cardNickname || formatUid(lastLog.cardUid)}
-                  </p>
-                  {lastLog.cardNickname && (
-                    <p className="text-xs font-mono mt-1" style={{ color: 'var(--text-muted)' }}>
-                      {formatUid(lastLog.cardUid)}
-                    </p>
-                  )}
-                </>
+              <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Access Source</p>
+              <p className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                {source === 'WEB' ? 'Web Dashboard' : source === 'TOUCH' ? 'Touch Sensor' : lastLog?.cardNickname || formatUid(lastLog?.cardUid || '')}
+              </p>
+              {lastLog?.action === 'unlock' ? (
+                <p className="text-lg font-semibold mt-1" style={{ color: 'var(--success)' }}>OK</p>
               ) : (
-                <>
-                  <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Event</p>
-                  <p className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {lastLog?.action === 'unlock' ? 'Door Unlocked' : 'Access Denied'}
-                  </p>
-                </>
+                <p className="text-lg font-semibold mt-1" style={{ color: 'var(--danger)' }}>DENY</p>
               )}
             </div>
             <div className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--text-muted)' }}>
               <Clock className="w-3.5 h-3.5" />
               <span>{lastLog?.timestamp ? formatRelativeTime(lastLog.timestamp) : 'Just now'}</span>
             </div>
-            {lastLog && (
-              <div className="pt-3.5" style={{ borderTop: '1px solid var(--border)' }}>
-                <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Action</p>
-                <p className="text-[13px] mt-1" style={{ color: 'var(--text-secondary)' }}>
-                  {lastLog.success ? 'Access granted' : 'Access denied'} — {source}
-                </p>
-              </div>
-            )}
           </div>
         ) : (
           <div className="text-center py-4">

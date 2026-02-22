@@ -73,9 +73,24 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
   const [draftHour, setDraftHour] = useState(3);
   const [draftInterval, setDraftInterval] = useState<number | undefined>(undefined);
 
+  const [isFloatingOpen, setIsFloatingOpen] = useState(false);
+
   const togglePanel = (panel: ActivePanel) => {
     setActivePanel(prev => prev === panel ? null : panel);
   };
+
+  const handleCloseFloat = () => {
+    setIsFloatingOpen(false);
+    dashboardEvents.emit('device-tools-closed');
+  };
+
+  // Listen to mobile floating button toggle
+  useEffect(() => {
+    const unsub = dashboardEvents.on('device-tools-open', (open: boolean) => {
+      setIsFloatingOpen(open);
+    });
+    return () => unsub();
+  }, []);
 
   // Sync rfidDisabled from status
   useEffect(() => {
@@ -501,7 +516,36 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
   }, [stopCloneCountdown]);
 
   return (
-    <Card>
+    <>
+      {/* Backdrop — mobile only */}
+      <AnimatePresence>
+        {isFloatingOpen && (
+          <motion.div
+            key="tools-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="max-md:block hidden fixed inset-0 z-40"
+            style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+            onClick={handleCloseFloat}
+          />
+        )}
+      </AnimatePresence>
+
+      <Card
+        id="device-tools-card"
+        className={[
+          'transition-[transform,opacity] duration-300',
+          // Mobile ONLY — fixed bottom sheet (max-md: means "< md breakpoint only", zero desktop leakage)
+          'max-md:fixed max-md:bottom-0 max-md:left-0 max-md:right-0 max-md:z-50',
+          'max-md:rounded-t-3xl max-md:rounded-b-none max-md:max-h-[85vh] max-md:overflow-y-auto max-md:pb-28',
+          isFloatingOpen
+            ? 'max-md:translate-y-0 max-md:opacity-100 max-md:pointer-events-auto'
+            : 'max-md:translate-y-full max-md:opacity-0 max-md:pointer-events-none',
+        ].join(' ')}
+        style={{ transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0, 1)' } as React.CSSProperties}
+      >
       <CardHeader>
         <div className="flex items-center gap-2">
           <div
@@ -510,7 +554,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
           >
             <Wrench className="w-4 h-4" style={{ color: 'var(--primary)' }} />
           </div>
-          <div>
+          <div className="flex-1">
             <CardTitle>Device Tools</CardTitle>
             <CardDescription>Manage & configure</CardDescription>
           </div>
@@ -1182,5 +1226,6 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
         </AnimatePresence>
       </CardContent>
     </Card>
+    </>
   );
 }

@@ -599,7 +599,7 @@ export default function DashboardPage() {
                     index={index}
                     isEditing={isEditing}
                   >
-                    <div className={id === 'door-controls' ? 'hidden md:block' : ''}>
+                    <div className={id === 'door-controls' || id === 'device-tools' ? 'hidden md:block' : ''}>
                       {renderCard(id)}
                     </div>
                   </SortableCard>
@@ -610,12 +610,17 @@ export default function DashboardPage() {
         ) : (
           <MasonryGrid>
             {layout.map((id) => (
-              <div key={id} className={id === 'door-controls' ? 'hidden md:block' : ''}>
+              <div key={id} className={id === 'door-controls' || id === 'device-tools' ? 'hidden md:block' : ''}>
                 {renderCard(id)}
               </div>
             ))}
           </MasonryGrid>
         )}
+
+        {/* DeviceToolsCard — always mounted on mobile for floating sheet; hidden on desktop (shown in grid above) */}
+        <div className="md:hidden">
+          <DeviceToolsCard status={status} />
+        </div>
         </>)}
       </div>
 
@@ -624,6 +629,7 @@ export default function DashboardPage() {
         <FloatingDoorButton
           isLocked={!status?.doorUnlocked}
           onAction={fetchStatus}
+          status={status}
         />
       )}
 

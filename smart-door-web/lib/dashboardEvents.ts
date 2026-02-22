@@ -3,7 +3,7 @@
  * Components subscribe to events and react to changes without prop drilling.
  */
 
-type EventType = 'cards-changed' | 'card-renamed' | 'state-changed' | 'cards-syncing' | 'cards-synced' | 'cards-instant-update' | 'clone-status' | 'log-added';
+type EventType = 'cards-changed' | 'card-renamed' | 'state-changed' | 'cards-syncing' | 'cards-synced' | 'cards-instant-update' | 'clone-status' | 'log-added' | 'device-tools-open' | 'device-tools-closed';
 type Listener = (...args: any[]) => void;
 
 class DashboardEventBus {

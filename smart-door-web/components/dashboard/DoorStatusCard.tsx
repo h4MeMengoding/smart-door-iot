@@ -165,7 +165,7 @@ export function DoorStatusCard({ status, isLoading, apiError, countdown, autoLoc
           </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-3 hidden sm:block">
           {/* Auto-lock countdown text when unlocked */}
           <div className="flex items-center justify-between">
             <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>System State</span>

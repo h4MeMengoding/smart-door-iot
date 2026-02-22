@@ -42,7 +42,7 @@ export function DoorStatusSkeleton() {
   );
 }
 
-// ── System Info Skeleton (~280px) ──
+// ── System Info Skeleton ──
 export function SystemInfoSkeleton() {
   return (
     <Card>
@@ -56,8 +56,17 @@ export function SystemInfoSkeleton() {
           </div>
         </div>
       </div>
-      {/* 6 rows */}
-      <div className="space-y-3.5">
+      {/* Mobile: compact 3x2 grid */}
+      <div className="sm:hidden grid grid-cols-3 gap-y-3 gap-x-4">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="flex flex-col gap-1">
+            <Shimmer className="h-2.5 w-12" />
+            <Shimmer className="h-3.5 w-10" />
+          </div>
+        ))}
+      </div>
+      {/* Desktop: full rows */}
+      <div className="hidden sm:block space-y-3.5">
         {[...Array(6)].map((_, i) => (
           <div key={i} className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -99,7 +108,7 @@ export function DoorControlsSkeleton() {
   );
 }
 
-// ── Last Access Skeleton (~260px) ──
+// ── Last Access Skeleton ──
 export function LastAccessSkeleton() {
   return (
     <Card>
@@ -113,14 +122,26 @@ export function LastAccessSkeleton() {
           </div>
         </div>
       </div>
-      {/* Access info */}
-      <div className="flex flex-col items-center py-4">
+      {/* Mobile: simplified layout */}
+      <div className="sm:hidden space-y-3">
+        <div>
+          <Shimmer className="h-2.5 w-20 mb-1.5" />
+          <Shimmer className="h-6 w-32 mb-1" />
+          <Shimmer className="h-5 w-10 rounded-md" />
+        </div>
+        <div className="flex items-center gap-2">
+          <Shimmer className="w-3.5 h-3.5 rounded" />
+          <Shimmer className="h-3 w-24" />
+        </div>
+      </div>
+      {/* Desktop: full layout */}
+      <div className="hidden sm:flex flex-col items-center py-4">
         <Shimmer className="w-12 h-12 rounded-xl mb-3" />
         <Shimmer className="h-3 w-28 mb-2" />
         <Shimmer className="h-4 w-36 mb-2" />
         <Shimmer className="h-3 w-24" />
       </div>
-      <div className="pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+      <div className="hidden sm:block pt-3" style={{ borderTop: '1px solid var(--border)' }}>
         <Shimmer className="h-3 w-32 mx-auto" />
       </div>
     </Card>
@@ -321,6 +342,14 @@ export function DashboardSkeletons({ layout }: { layout: string[] }) {
       {layout.map((id) => {
         const Skeleton = SKELETON_MAP[id];
         if (!Skeleton) return null;
+        // DeviceTools is accessed via floating button on mobile — hide its skeleton slot
+        if (id === 'device-tools') {
+          return (
+            <div key={id} className="hidden md:block">
+              <Skeleton />
+            </div>
+          );
+        }
         return <Skeleton key={id} />;
       })}
     </MasonryGrid>

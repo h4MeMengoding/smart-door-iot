@@ -108,7 +108,7 @@ export function SystemInfoCard({ uptimeRaw, isConnected = false, sysInfo = null 
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3 sm:block hidden">
         {/* WiFi Signal */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5" style={{ color: 'var(--text-muted)' }}>
@@ -117,7 +117,7 @@ export function SystemInfoCard({ uptimeRaw, isConnected = false, sysInfo = null 
           </div>
           <div className="flex items-center gap-2">
             {/* Signal bars */}
-            <div className="flex items-end gap-[2px] h-3.5">
+            <div className="flex items-end gap-0.5 h-3.5">
               {[1, 2, 3, 4].map((bar) => (
                 <div
                   key={bar}
@@ -251,6 +251,47 @@ export function SystemInfoCard({ uptimeRaw, isConnected = false, sysInfo = null 
           <p className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
             {uptimeSeconds > 0 ? formatUptime(uptimeSeconds) : '-'}
           </p>
+        </div>
+      </CardContent>
+      <CardContent className="space-y-3 block sm:hidden">
+        {/* Simplified content for mobile with 3 rows and combined WiFi + Database */}
+        <div className="grid grid-cols-3 gap-y-2 gap-x-4">
+          <div className="flex flex-col items-start">
+            <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>WiFi & DB</span>
+            <span className="text-[13px] font-semibold" style={{ color: isConnected && dbConnected ? 'var(--success)' : 'var(--danger)' }}>
+              {isConnected && dbConnected ? 'OK' : 'Issue'}
+            </span>
+          </div>
+          <div className="flex flex-col items-start">
+            <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>MQTT</span>
+            <span className="text-[13px] font-semibold" style={{ color: isConnected ? 'var(--success)' : 'var(--danger)' }}>
+              {isConnected ? 'OK' : 'Issue'}
+            </span>
+          </div>
+          <div className="flex flex-col items-start">
+            <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>RAM</span>
+            <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+              {ramPct !== null ? `${ramPct}%` : '-'}
+            </span>
+          </div>
+          <div className="flex flex-col items-start">
+            <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>Flash</span>
+            <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+              {flashPct !== null ? `${flashPct}%` : '-'}
+            </span>
+          </div>
+          <div className="flex flex-col items-start">
+            <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>Temp</span>
+            <span className="text-[13px] font-semibold tabular-nums" style={{ color: sysInfo?.temperature !== undefined && sysInfo.temperature !== undefined && sysInfo.temperature > 70 ? 'var(--danger)' : sysInfo?.temperature !== undefined && sysInfo.temperature > 55 ? 'var(--warning)' : 'var(--text-primary)' }}>
+              {sysInfo?.temperature !== undefined ? `${sysInfo.temperature.toFixed(1)}°C` : '-'}
+            </span>
+          </div>
+          <div className="flex flex-col items-start">
+            <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>Uptime</span>
+            <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+              {uptimeSeconds > 0 ? `${Math.floor(uptimeSeconds / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m` : '-'}
+            </span>
+          </div>
         </div>
       </CardContent>
     </Card>
