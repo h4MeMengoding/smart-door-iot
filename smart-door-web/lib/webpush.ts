@@ -62,7 +62,13 @@ export async function sendPushToAll(payload: PushPayload): Promise<{ sent: numbe
             keys: { p256dh: sub.p256dh, auth: sub.auth },
           },
           pushPayload,
-          { TTL: 60 * 60, urgency: 'high' }
+          {
+            TTL: 60 * 60,
+            urgency: 'high',
+            // Topic helps iOS APNs coalesce/replace notifications and
+            // improves background delivery reliability
+            topic: payload.tag || 'smart-door-notification',
+          }
         );
         sent++;
       } catch (err: unknown) {

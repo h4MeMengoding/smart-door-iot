@@ -149,31 +149,26 @@ export function PWAInstallSection() {
     }
   }, []);
 
-  // Already installed — show status
+  // Already installed — hide install card entirely, notifications handled separately
   if (isInstalled) {
     const notifSupported = isNotificationSupported();
 
+    // If notifications are fully set up, hide this card completely
+    if (!notifSupported || (notifPermission === 'granted' && pushStatus === 'subscribed')) {
+      return null;
+    }
+
+    // Show only notification setup if still needed
     return (
       <Card variant="bordered">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
-            <Smartphone className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-            Install App
+            <Bell className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+            Notifications
           </CardTitle>
-          <CardDescription>PWA installation status</CardDescription>
+          <CardDescription>Push notification setup</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {/* App installed status */}
-          <div
-            className="flex items-center gap-3 p-3 rounded-xl"
-            style={{ background: 'var(--success-light)', border: '1px solid color-mix(in srgb, var(--success) 25%, transparent)' }}
-          >
-            <Check className="w-4 h-4 shrink-0" style={{ color: 'var(--success-text)' }} />
-            <span className="text-[13px] font-medium" style={{ color: 'var(--success-text)' }}>
-              App installed
-            </span>
-          </div>
-
           {/* Notification permission status */}
           {notifSupported && (
             <>

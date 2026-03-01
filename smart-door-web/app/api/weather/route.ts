@@ -15,6 +15,14 @@ interface WeatherResponse {
     wind_speed_10m: number;
     is_day: number;
   };
+  hourly: {
+    time: string[];
+    temperature_2m: number[];
+    weather_code: number[];
+    relative_humidity_2m: number[];
+    precipitation_probability: number[];
+    is_day: number[];
+  };
 }
 
 // WMO Weather interpretation codes → description & icon name
@@ -40,7 +48,7 @@ function getWeatherInfo(code: number, isDay: boolean): { description: string; ic
 
 export async function GET() {
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${LATITUDE}&longitude=${LONGITUDE}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,is_day&timezone=auto`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${LATITUDE}&longitude=${LONGITUDE}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,is_day&hourly=temperature_2m,weather_code,relative_humidity_2m,precipitation_probability,is_day&forecast_days=1&timezone=auto`;
     
     const res = await fetch(url, { next: { revalidate: 600 } }); // Cache for 10 min
     
@@ -52,6 +60,28 @@ export async function GET() {
     const { temperature_2m, relative_humidity_2m, weather_code, wind_speed_10m, is_day } = data.current;
     const weatherInfo = getWeatherInfo(weather_code, is_day === 1);
 
+    // Build hourly forecast (next 12 hours from now)
+    const now = new Date();
+    const currentHour = now.getHours();
+    const hourly = [];
+    
+    if (data.hourly) {
+      for (let i = 0; i < data.hourly.time.length && hourly.length < 12; i++) {
+        const hourDate = new Date(data.hourly.time[i]);
+        if (hourDate.getHours() <= currentHour) continue; // Skip past hours
+        
+        const hInfo = getWeatherInfo(data.hourly.weather_code[i], data.hourly.is_day[i] === 1);
+        hourly.push({
+          time: data.hourly.time[i],
+          temperature: Math.round(data.hourly.temperature_2m[i]),
+          humidity: data.hourly.relative_humidity_2m[i],
+          precipitationProbability: data.hourly.precipitation_probability[i],
+          description: hInfo.description,
+          icon: hInfo.icon,
+        });
+      }
+    }
+
     return NextResponse.json({
       temperature: Math.round(temperature_2m),
       humidity: relative_humidity_2m,
@@ -60,6 +90,7 @@ export async function GET() {
       icon: weatherInfo.icon,
       isDay: is_day === 1,
       code: weather_code,
+      hourly,
     }, {
       headers: {
         'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=300',

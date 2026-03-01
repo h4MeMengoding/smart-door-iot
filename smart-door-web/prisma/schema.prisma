@@ -90,3 +90,16 @@ model PushSubscription {
 
   @@map("push_subscriptions")
 }
+
+/// Tabel auth_pins - PIN authentication for dashboard access
+/// Only one row should exist (singleton pattern)
+model AuthPin {
+  id             String   @id @default(uuid())
+  pinHash        String   @map("pin_hash")             // SHA-256 hash of the 6-digit PIN
+  failedAttempts Int      @default(0) @map("failed_attempts")
+  lockedUntil    DateTime? @map("locked_until")         // Rate limit lockout
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("auth_pins")
+}

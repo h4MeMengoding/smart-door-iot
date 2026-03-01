@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { logSystemEvent } from '@/lib/systemEvents';
 import { PWAInstallSection, NotificationPreferencesSection } from './PWASettings';
+import { SecuritySettings } from './SecuritySettings';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -204,7 +205,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       {isOpen && (
         <motion.div
           key="settings-modal"
-          className="fixed inset-0 z-[60] flex items-start justify-center"
+          className="fixed inset-0 z-[60] flex items-center justify-center"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -222,7 +223,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             initial={{ scale: 0.95, y: 20 }}
             animate={{ scale: 1, y: 0 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto mt-4 md:mt-[8vh] mx-4 rounded-3xl"
+            className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto mx-4 rounded-3xl"
         style={{
           background: 'var(--bg-base)',
           border: '1px solid var(--border)',
@@ -306,6 +307,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               </div>
             </CardContent>
           </Card>
+
+          {/* Security */}
+          <SecuritySettings />
 
           {/* PWA Install */}
           <PWAInstallSection />

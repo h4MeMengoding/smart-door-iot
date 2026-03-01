@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DoorStatus, Card as CardType, AccessLog } from '@/lib/types';
+import { DoorStatus, AccessLog } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { CreditCard, Clock, Globe, Fingerprint } from 'lucide-react';
 import { formatUid, formatRelativeTime } from '@/lib/utils';
@@ -18,35 +18,35 @@ export function LastAccessCard({ status }: LastAccessCardProps) {
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [lastLog, setLastLog] = useState<AccessLog | null>(null);
   const [, setTick] = useState(0);
-  const fetchingRef = useRef(false);
 
-  const fetchLastLog = useCallback(async () => {
-    if (fetchingRef.current) return;
-    fetchingRef.current = true;
+  const fetchLastLog = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await fetch('/api/logs');
+      const response = await fetch('/api/logs?limit=1', { signal });
       if (!response.ok) return;
-      const logs: AccessLog[] = await response.json();
+      const data = await response.json();
+      // API returns { logs: [...], totalCount } for initial loads
+      const logs: AccessLog[] = data.logs ?? data;
       if (logs.length > 0) {
-        setLastLog(logs[0]); // Already sorted desc by createdAt
+        setLastLog(logs[0]);
       }
-    } catch {
-      // Silently fail
-    } finally {
-      fetchingRef.current = false;
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') return;
+      // Silently fail for other errors
     }
   }, []);
 
-  // Fetch on mount
+  // Fetch on mount — use AbortController so StrictMode double-invoke cleans up safely
   useEffect(() => {
-    fetchLastLog();
+    const controller = new AbortController();
+    fetchLastLog(controller.signal);
+    return () => controller.abort();
   }, [fetchLastLog]);
 
   // Refetch when new logs are added or door status changes
   useEffect(() => {
     const unsub1 = dashboardEvents.on('log-added', () => {
       // Small delay to let DB write complete
-      setTimeout(fetchLastLog, 500);
+      setTimeout(() => fetchLastLog(), 500);
     });
     return () => { unsub1(); };
   }, [fetchLastLog]);
@@ -57,7 +57,7 @@ export function LastAccessCard({ status }: LastAccessCardProps) {
     const currentEvent = status?.lastEvent || null;
     if (currentEvent && currentEvent !== prevEventRef.current && currentEvent !== 'System ready') {
       // Delay to let the log POST complete
-      setTimeout(fetchLastLog, 1000);
+      setTimeout(() => fetchLastLog(), 1000);
     }
     prevEventRef.current = currentEvent;
   }, [status?.lastEvent, fetchLastLog]);
