@@ -7,7 +7,7 @@ import {
   Wifi, WifiOff, CreditCard, Clock,
   CheckCircle2, Database, HardDrive, LockOpen,
 } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 // ─── Types ───
 
@@ -184,7 +184,6 @@ function SystemStats({ stats }: { stats: SystemStats }) {
 // ─── Login Content ───
 
 function LoginContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') || '/';
 
@@ -279,7 +278,8 @@ function LoginContent() {
 
       if (data.success) {
         setSuccess(true);
-        setTimeout(() => { router.push(redirect); router.refresh(); }, 900);
+        // Hard navigation to ensure fresh server render (no stale Router Cache)
+        setTimeout(() => { window.location.href = redirect; }, 900);
         return;
       }
 
@@ -300,7 +300,7 @@ function LoginContent() {
     } finally {
       setLoading(false);
     }
-  }, [loading, locked, redirect, router, triggerShake]);
+  }, [loading, locked, redirect, triggerShake]);
 
   const handleDigitInput = useCallback((index: number, value: string) => {
     if (locked || loading) return;

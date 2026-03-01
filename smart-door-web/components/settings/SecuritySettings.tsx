@@ -198,7 +198,9 @@ export function SecuritySettings() {
     setLoggingOut(true);
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      router.push('/login');
+      // Hard navigation to clear Next.js Router Cache completely
+      // router.push would keep cached RSC payloads, allowing bypass
+      window.location.href = '/login';
     } catch {
       toast.error('Failed to logout');
       setLoggingOut(false);

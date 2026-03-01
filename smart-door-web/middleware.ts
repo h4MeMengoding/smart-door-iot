@@ -48,14 +48,25 @@ async function verifyToken(token: string): Promise<boolean> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Prevent caching of protected pages — ensures middleware always runs
+  const addNoCacheHeaders = (response: NextResponse) => {
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    return response;
+  };
+
   // Check session cookie — no DB call needed (HMAC verification only)
   const sessionToken = request.cookies.get(SESSION_COOKIE)?.value;
 
   if (sessionToken) {
     const valid = await verifyToken(sessionToken);
     if (valid) {
-      return NextResponse.next(); // Authenticated
+      return addNoCacheHeaders(NextResponse.next()); // Authenticated
     }
+    // Invalid/expired token — clear it
+    const response = NextResponse.next();
+    response.cookies.delete(SESSION_COOKIE);
   }
 
   // No valid session — check if PIN is configured via API
@@ -71,8 +82,13 @@ export async function middleware(request: NextRequest) {
       }
     }
   } catch {
-    // If check fails, allow access (fail-open for self-hosted)
-    return NextResponse.next();
+    // Fail-closed: if auth check fails, redirect to login
+    // Prevents bypass when internal fetch errors occur
+    const loginUrl = new URL('/login', request.url);
+    if (pathname !== '/') {
+      loginUrl.searchParams.set('redirect', pathname);
+    }
+    return NextResponse.redirect(loginUrl);
   }
 
   // PIN is configured but no valid session → redirect to login

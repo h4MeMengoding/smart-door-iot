@@ -122,6 +122,23 @@ export default function DashboardPage() {
   const autoLockRef = useRef(DEFAULT_AUTO_LOCK);
   const initialFetchDone = useRef(false);
 
+  // ── Client-side auth guard — prevents stale Router Cache bypass ──
+  useEffect(() => {
+    let cancelled = false;
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/api/auth/check');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.configured && !data.authenticated && !cancelled) {
+          window.location.replace('/login');
+        }
+      } catch { /* network error — let middleware handle on next nav */ }
+    };
+    checkAuth();
+    return () => { cancelled = true; };
+  }, []);
+
   const { layout, saveLayout, resetLayout, isEditing, setIsEditing } = useDashboardLayout();
 
   // DnD sensors
