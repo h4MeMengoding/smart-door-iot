@@ -16,6 +16,7 @@ import { dashboardEvents } from '@/lib/dashboardEvents';
  */
 export function useServerLogs() {
   const [logs, setLogs] = useState<AccessLog[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const latestTimestampRef = useRef<string | null>(null);
@@ -31,12 +32,16 @@ export function useServerLogs() {
         throw new Error('Failed to fetch logs');
       }
 
-      const data: AccessLog[] = await response.json();
-      setLogs(data);
+      const data = await response.json();
+      // New format: { logs: [...], totalCount: N }
+      const logEntries: AccessLog[] = data.logs || data;
+      const count: number = data.totalCount ?? logEntries.length;
+      setLogs(logEntries);
+      setTotalCount(count);
 
       // Track the most recent timestamp for incremental fetches
-      if (data.length > 0) {
-        latestTimestampRef.current = data[0].timestamp;
+      if (logEntries.length > 0) {
+        latestTimestampRef.current = logEntries[0].timestamp;
       }
     } catch (err) {
       console.error('Error fetching logs:', err);
@@ -61,6 +66,7 @@ export function useServerLogs() {
       if (newLogs.length > 0) {
         latestTimestampRef.current = newLogs[0].timestamp;
         setLogs((prev) => [...newLogs, ...prev]);
+        setTotalCount((prev) => prev + newLogs.length);
       }
     } catch {
       // Silent fail — will be triggered again on next MQTT event
@@ -105,6 +111,7 @@ export function useServerLogs() {
 
   return {
     logs,
+    totalCount,
     loading,
     error,
     refreshLogs,

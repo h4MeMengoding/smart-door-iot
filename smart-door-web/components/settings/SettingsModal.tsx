@@ -11,6 +11,7 @@ import { useTheme } from '@/components/providers/ThemeProvider';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { logSystemEvent } from '@/lib/systemEvents';
+import { PWAInstallSection, NotificationPreferencesSection } from './PWASettings';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -203,7 +204,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       {isOpen && (
         <motion.div
           key="settings-modal"
-          className="fixed inset-0 z-50 flex items-start justify-center"
+          className="fixed inset-0 z-[60] flex items-start justify-center"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -221,7 +222,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             initial={{ scale: 0.95, y: 20 }}
             animate={{ scale: 1, y: 0 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto mt-[8vh] mx-4 rounded-3xl"
+            className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto mt-4 md:mt-[8vh] mx-4 rounded-3xl"
         style={{
           background: 'var(--bg-base)',
           border: '1px solid var(--border)',
@@ -306,6 +307,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </CardContent>
           </Card>
 
+          {/* PWA Install */}
+          <PWAInstallSection />
+
+          {/* Push Notification Preferences */}
+          <NotificationPreferencesSection />
+
           {/* MQTT Connection */}
           <Card variant="bordered">
             <CardHeader>
@@ -356,20 +363,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <Button onClick={handleTestBuzzer} isLoading={isTesting} variant="secondary" size="sm">
                   <Volume2 className="w-3.5 h-3.5 mr-1.5" />
                   Test
-                </Button>
-              </div>
-
-              <div
-                className="flex items-center justify-between p-3 rounded-xl"
-                style={{ background: 'var(--danger-light)', border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)' }}
-              >
-                <div>
-                  <p className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Restart ESP32</p>
-                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Reboot the device (~10s offline)</p>
-                </div>
-                <Button onClick={handleRestartEsp} isLoading={isRestarting} variant="danger" size="sm">
-                  <Power className="w-3.5 h-3.5 mr-1.5" />
-                  Restart
                 </Button>
               </div>
             </CardContent>
@@ -504,22 +497,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             </CardContent>
           </Card>
 
-          {/* About */}
-          <div
-            className="flex items-center justify-between p-4 rounded-2xl"
-            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}
-          >
-            <div>
-              <p className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Smart Door Lock Control Panel</p>
-              <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Version 1.0.0 - Built with Next.js</p>
-            </div>
-            <div
-              className="px-2.5 py-1 rounded-full"
-              style={{ background: 'var(--success-light)' }}
-            >
-              <p className="text-[10px] font-medium" style={{ color: 'var(--success-text)' }}>Online</p>
-            </div>
-          </div>
         </div>
           </motion.div>
         </motion.div>

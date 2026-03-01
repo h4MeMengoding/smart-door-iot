@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import { Toaster } from 'react-hot-toast';
+import { SplashScreen } from './SplashScreen';
 
 function LayoutContent({ children }: { children: React.ReactNode }) {
   return (
@@ -27,10 +28,10 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  // Register service worker for PWA
+  // Register service worker for PWA + Push Notifications
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
         // SW registration failed — non-critical
       });
     }
@@ -38,6 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <ThemeProvider>
+      <SplashScreen />
       <LayoutContent>{children}</LayoutContent>
       <Toaster
         position="top-right"

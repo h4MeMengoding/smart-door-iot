@@ -32,7 +32,7 @@ interface LogsModalProps {
 }
 
 export function LogsModal({ isOpen, onClose }: LogsModalProps) {
-  const { logs, loading, error, refreshLogs } = useServerLogs();
+  const { logs, totalCount, loading, error, refreshLogs } = useServerLogs();
   const [filter, setFilter] = useState<'all' | 'unlocked' | 'denied' | 'RFID' | 'TOUCH' | 'WEB'>('all');
   const LOGS_PER_PAGE = 20;
   const [visibleCount, setVisibleCount] = useState(LOGS_PER_PAGE);
@@ -140,7 +140,7 @@ export function LogsModal({ isOpen, onClose }: LogsModalProps) {
             </div>
             <div>
               <h2 className="text-[15px] font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>Access History</h2>
-              <p className="text-[11px] font-medium tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>{logs.length} total entries</p>
+              <p className="text-[11px] font-medium tracking-wide uppercase" style={{ color: 'var(--text-muted)' }}>{totalCount.toLocaleString()} total entries</p>
             </div>
           </div>
           <button

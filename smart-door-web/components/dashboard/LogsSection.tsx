@@ -41,7 +41,7 @@ function getActionBadge(action: string, success: boolean) {
 }
 
 export function LogsSection({ onExpand }: LogsSectionProps) {
-  const { logs, loading, error } = useServerLogs();
+  const { logs, totalCount, loading, error } = useServerLogs();
 
   const displayLogs = logs.slice(0, 3);
 
@@ -58,7 +58,7 @@ export function LogsSection({ onExpand }: LogsSectionProps) {
             </div>
             <div>
               <CardTitle>Access History</CardTitle>
-              <CardDescription>{logs.length} total entries</CardDescription>
+              <CardDescription>{totalCount.toLocaleString()} total entries</CardDescription>
             </div>
           </div>
           <button
@@ -137,13 +137,13 @@ export function LogsSection({ onExpand }: LogsSectionProps) {
                 </div>
               </div>
             ))}
-            {logs.length > 3 && (
+            {totalCount > 3 && (
               <button
                 onClick={onExpand}
                 className="w-full text-center py-2 rounded-xl text-xs font-medium transition-colors"
                 style={{ color: 'var(--primary)', background: 'var(--primary-light)' }}
               >
-                +{logs.length - 3} more entries
+                +{(totalCount - 3).toLocaleString()} more entries
               </button>
             )}
           </div>

@@ -41,6 +41,7 @@ import { api } from '@/lib/api';
 import { useMqtt as useWebSocket } from '@/hooks/useMqtt';
 import { useDashboardLayout } from '@/hooks/useDashboardLayout';
 import { dashboardEvents } from '@/lib/dashboardEvents';
+import { sendLocalNotification } from '@/lib/notifications';
 import { WifiOff, RefreshCw, GripVertical, LayoutDashboard, Check, RotateCcw, CreditCard as CreditCardIcon, FileText, LayoutList } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -240,6 +241,7 @@ export default function DashboardPage() {
             const source = detectAccessSource(newStatus.lastEvent);
             if (source.accessType === 'WEB') {
               toast.success('Door unlocked via web');
+              sendLocalNotification('door_open', 'Door Opened', 'Door unlocked via Web Dashboard', 'door-open');
               // Ensure WEB unlock is logged to DB (ESP32 may not send access_log for API unlocks)
               fetch('/api/logs', {
                 method: 'POST',
@@ -248,6 +250,7 @@ export default function DashboardPage() {
               }).catch(() => {});
             } else if (source.accessType === 'TOUCH') {
               toast.success('Door unlocked via touch');
+              sendLocalNotification('door_open', 'Door Opened', 'Door unlocked via Touch Sensor', 'door-open');
               // Ensure TOUCH unlock is logged to DB
               fetch('/api/logs', {
                 method: 'POST',
@@ -256,10 +259,12 @@ export default function DashboardPage() {
               }).catch(() => {});
             } else {
               toast.success('Door unlocked');
+              sendLocalNotification('door_open', 'Door Opened', 'Door unlocked via RFID', 'door-open');
             }
             startCountdown();
           } else {
             toast.success('Door locked');
+            sendLocalNotification('door_locked', 'Door Locked', 'Door has been locked', 'door-locked');
             stopCountdown();
           }
         }
@@ -267,6 +272,7 @@ export default function DashboardPage() {
         if (prevStatusRef.current.lastCard !== newStatus.lastCard && newStatus.lastCard) {
           if (newStatus.lastEvent && newStatus.lastEvent.includes('denied')) {
             toast.error(`Access denied: ${newStatus.lastCard}`);
+            sendLocalNotification('rfid_denied', 'Access Denied', `Unauthorized card: ${newStatus.lastCard}`, 'rfid-denied');
           }
         }
       }
@@ -289,6 +295,7 @@ export default function DashboardPage() {
       // ── Instant card added ──
       const { uid, allCards } = message.data;
       toast.success(`Card registered: ${uid}`);
+      sendLocalNotification('card_registered', 'Card Registered', `New card added: ${uid}`, 'card-registered');
       // Instantly update UI with full card list from ESP
       dashboardEvents.emit('cards-instant-update', allCards);
       // Background DB sync
@@ -298,6 +305,7 @@ export default function DashboardPage() {
       // ── Instant card removed ──
       const { uid, allCards } = message.data;
       toast.success(`Card removed: ${uid}`);
+      sendLocalNotification('card_removed', 'Card Removed', `Card removed: ${uid}`, 'card-removed');
       // Instantly update UI with full card list from ESP
       dashboardEvents.emit('cards-instant-update', allCards);
       // Background DB sync
@@ -317,8 +325,10 @@ export default function DashboardPage() {
       const { uid, success } = message.data;
       if (!success) {
         toast.error(`Access denied: ${uid}`);
+        sendLocalNotification('rfid_denied', 'Access Denied', `Unauthorized card: ${uid}`, 'rfid-denied');
       } else {
         toast.success(`Card ${uid} authorized`);
+        sendLocalNotification('rfid_access', 'RFID Access', `Card ${uid} authorized`, 'rfid-access');
       }
 
     } else if (message.type === 'system_info' && message.data) {
@@ -534,8 +544,8 @@ export default function DashboardPage() {
 
         {/* ── Dashboard — visible when ESP32 is online ── */}
         {!isEspOffline && (<>
-        {/* Edit Layout Bar */}
-        <div className="flex items-center justify-end gap-2 mb-4">
+        {/* Edit Layout Bar — desktop: top, mobile: bottom */}
+        <div className="hidden md:flex items-center justify-end gap-2 mb-4">
           {isEditing ? (
             <>
               <Button
@@ -620,6 +630,53 @@ export default function DashboardPage() {
         {/* DeviceToolsCard — always mounted on mobile for floating sheet; hidden on desktop (shown in grid above) */}
         <div className="md:hidden">
           <DeviceToolsCard status={status} />
+        </div>
+
+        {/* Mobile Edit Layout — at bottom */}
+        <div className="md:hidden flex items-center justify-center gap-2 mt-6 mb-24 px-4">
+          {isEditing ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  resetLayout();
+                  toast.success('Layout reset to default');
+                }}
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                Reset
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setArrangeModalOpen(true)}
+              >
+                <LayoutList className="w-3.5 h-3.5 mr-1.5" />
+                Arrange
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setIsEditing(false);
+                  toast.success('Layout saved');
+                }}
+              >
+                <Check className="w-3.5 h-3.5 mr-1.5" />
+                Done
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsEditing(true)}
+            >
+              <LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />
+              Edit Layout
+            </Button>
+          )}
         </div>
         </>)}
       </div>

@@ -94,21 +94,30 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET /api/logs - Get access logs (supports ?since=ISO for incremental polling)
+// GET /api/logs - Get access logs (supports ?since=ISO for incremental polling, ?limit=N&offset=N for paging)
 export async function GET(request: NextRequest) {
   try {
     const since = request.nextUrl.searchParams.get('since');
+    const limitParam = request.nextUrl.searchParams.get('limit');
+    const offsetParam = request.nextUrl.searchParams.get('offset');
 
     // Build query — if 'since' provided, only return logs newer than that timestamp
     const whereClause = since
       ? { createdAt: { gt: new Date(since) } }
       : undefined;
 
-    const logs = await prisma.accessLog.findMany({
-      where: whereClause,
-      orderBy: { createdAt: 'desc' },
-      take: since ? 50 : 200, // Smaller batch for incremental polls
-    });
+    const limit = since ? 50 : (limitParam ? Math.min(parseInt(limitParam, 10), 500) : 200);
+    const offset = offsetParam ? parseInt(offsetParam, 10) : 0;
+
+    const [logs, totalCount] = await Promise.all([
+      prisma.accessLog.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.accessLog.count({ where: whereClause }),
+    ]);
 
     // Batch-fetch all card nicknames in ONE query (fix N+1)
     const rfidUids = [...new Set(
@@ -147,7 +156,13 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json(mapped);
+    // For incremental polls (since=), return flat array for backward compat
+    if (since) {
+      return NextResponse.json(mapped);
+    }
+
+    // For initial/paginated loads, return with total count
+    return NextResponse.json({ logs: mapped, totalCount });
   } catch (error) {
     console.error('Error fetching logs:', error);
     return NextResponse.json(

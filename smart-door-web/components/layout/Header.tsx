@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Settings, Radio } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import { SettingsModal } from '@/components/settings/SettingsModal';
+import { WeatherWidget } from '@/components/dashboard/WeatherWidget';
 
 export function Header() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -11,18 +12,8 @@ export function Header() {
     <>
       <header className="px-4 md:px-8 pt-6 pb-2">
         <div className="flex items-center justify-between gap-4">
-          {/* Left: Logo */}
-          <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{
-                background: 'var(--primary)',
-                boxShadow: '0 0 16px rgba(191, 254, 1, 0.2)',
-              }}
-            >
-              <Radio className="w-5 h-5" style={{ color: 'var(--primary-text)' }} />
-            </div>
-          </div>
+          {/* Left: Weather */}
+          <WeatherWidget />
 
           {/* Right: Settings only */}
           <div className="flex items-center gap-2">
