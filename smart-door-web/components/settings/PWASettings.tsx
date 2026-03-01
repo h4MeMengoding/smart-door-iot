@@ -135,7 +135,7 @@ export function PWAInstallSection() {
 
   // On mount, check push subscription status
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
     if (Notification.permission === 'granted') {
       isPushSubscribed().then((subscribed) => {
         setPushStatus(subscribed ? 'subscribed' : 'not-subscribed');
