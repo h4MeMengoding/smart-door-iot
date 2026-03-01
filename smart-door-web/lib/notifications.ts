@@ -101,9 +101,9 @@ export async function subscribeToPush(): Promise<boolean> {
       // Convert VAPID key to Uint8Array
       const applicationServerKey = urlBase64ToUint8Array(publicKey);
       subscription = await registration.pushManager.subscribe({
-        userVisibleNotificationsOnly: true,
-        applicationServerKey,
-      } as PushSubscriptionOptionsInit);
+        userVisibleOnly: true,
+        applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
+      });
     }
 
     // Send subscription to server
