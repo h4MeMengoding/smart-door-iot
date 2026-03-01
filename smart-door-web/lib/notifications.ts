@@ -75,12 +75,22 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
  */
 export async function subscribeToPush(): Promise<boolean> {
   try {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.warn('[Push] PushManager not supported');
+      return false;
+    }
 
     // Get VAPID public key from server
     const res = await fetch('/api/push/subscribe');
+    if (!res.ok) {
+      console.error('[Push] Failed to fetch VAPID key:', res.status, res.statusText);
+      return false;
+    }
     const { publicKey, configured } = await res.json();
-    if (!configured || !publicKey) return false;
+    if (!configured || !publicKey) {
+      console.warn('[Push] VAPID not configured on server');
+      return false;
+    }
 
     const registration = await navigator.serviceWorker.ready;
 
@@ -92,13 +102,13 @@ export async function subscribeToPush(): Promise<boolean> {
       const applicationServerKey = urlBase64ToUint8Array(publicKey);
       subscription = await registration.pushManager.subscribe({
         userVisibleNotificationsOnly: true,
-        applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
+        applicationServerKey,
       } as PushSubscriptionOptionsInit);
     }
 
     // Send subscription to server
     const subJson = subscription.toJSON();
-    await fetch('/api/push/subscribe', {
+    const postRes = await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -110,9 +120,15 @@ export async function subscribeToPush(): Promise<boolean> {
       }),
     });
 
+    if (!postRes.ok) {
+      console.error('[Push] Failed to save subscription:', postRes.status, await postRes.text());
+      return false;
+    }
+
+    console.log('[Push] Subscribed successfully');
     return true;
   } catch (err) {
-    console.error('Push subscription failed:', err);
+    console.error('[Push] Subscription failed:', err);
     return false;
   }
 }

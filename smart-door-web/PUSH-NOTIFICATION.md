@@ -160,18 +160,64 @@ Service Worker kemudian memanggil `showNotification()` secara manual di dalam ev
 
 ## Service Worker Cache Policy
 
-Cache di service worker **tidak mengganggu** data real-time. Berikut kebijakan cache:
+Cache di service worker **SANGAT MINIMAL** dan **tidak mengganggu** data real-time. Satu-satunya hal yang di-cache adalah `/_next/static/*` (file JS/CSS dengan content hash yang immutable).
 
 | Request Type | Strategi | Alasan |
 |-------------|----------|--------|
-| `/api/*` (semua API) | **TIDAK DI-CACHE** | Data harus selalu real-time dari server |
-| MQTT WebSocket (`wss://`) | **TIDAK DI-INTERCEPT** | Beda origin, SW tidak bisa intercept |
-| Navigasi (HTML pages) | **TIDAK DI-CACHE** | Selalu fetch dari network agar React bundle terbaru |
-| `/_next/static/*` | Cache-first | File JS/CSS dengan content hash — immutable per build |
-| `/favicon/*` | Cache-first | Icon statis, jarang berubah |
-| Lainnya | **TIDAK DI-CACHE** | Pass-through ke network |
+| `/api/*` (semua API) | **TIDAK DI-INTERCEPT** | Data harus selalu real-time dari server |
+| MQTT WebSocket (`wss://`) | **TIDAK DI-INTERCEPT** | Beda origin |
+| Navigasi (HTML pages) | **TIDAK DI-INTERCEPT** | Selalu fresh dari network |
+| Manifest (`.webmanifest`) | **TIDAK DI-INTERCEPT** | Chrome harus bisa akses langsung untuk PWA |
+| `/favicon/*` | **TIDAK DI-INTERCEPT** | Biarkan network (Cloudflare Access compatible) |
+| `/_next/static/*` | Cache-first | Satu-satunya yang di-cache. Filename memiliki content hash, aman di-cache selamanya |
+| Lainnya | **TIDAK DI-INTERCEPT** | Pass-through ke network |
 
 **Jaminan: Semua data dari MQTT dan API selalu real-time, tidak pernah dari cache.**
+
+---
+
+## Cloudflare Access (Zero Trust) — PENTING
+
+Jika menggunakan **Cloudflare Tunnel + Cloudflare Access**, ada path-path yang **HARUS di-bypass** agar PWA dan Push Notification berfungsi. Cloudflare Access secara default memproteksi semua request, termasuk manifest dan service worker.
+
+### Path yang HARUS Di-Bypass
+
+Buat **Bypass policy** di Cloudflare Zero Trust Dashboard:
+
+1. Buka **Cloudflare Zero Trust** → **Access** → **Applications**
+2. Pilih aplikasi `iot.ilhame.id` (atau buat policy baru)
+3. Tambahkan **Bypass** rule untuk path berikut:
+
+| Path Pattern | Alasan |
+|-------------|--------|
+| `/favicon/*` | Manifest + icon harus bisa diakses Chrome untuk PWA installability |
+| `/sw.js` | Service Worker harus bisa di-register tanpa redirect |
+| `/api/push/*` | Push subscription endpoint (opsional, biasanya sudah ada cookie CF) |
+
+### Cara Membuat Bypass Policy
+
+```
+Zero Trust Dashboard → Access → Applications → [Your App]
+→ Add a policy:
+   - Policy name: "PWA Static Assets"
+   - Action: Bypass
+   - Selector: Path
+   - Value: /favicon/* , /sw.js
+```
+
+Atau gunakan **Service Token** untuk akses internal jika lebih kompleks.
+
+### Kenapa Ini Penting?
+
+Tanpa bypass:
+- Chrome fetch `site.webmanifest` → Cloudflare redirect ke login page → **CORS error** → Chrome tidak bisa baca manifest → **PWA tidak bisa di-install** (hanya "Add to Home Screen")
+- Service Worker fetch icon saat install → redirect → error → **SW install gagal**
+- `beforeinstallprompt` event **tidak pernah fire** → tombol Install tidak muncul
+
+Dengan bypass:
+- Chrome bisa baca manifest langsung → PWA criteria terpenuhi → **install prompt muncul** → install sebagai proper PWA di Android
+- Service Worker bisa register dan activate tanpa masalah
+- Push notification subscription bisa berjalan
 
 ---
 
@@ -194,19 +240,58 @@ Jika user sudah pernah memberikan izin notifikasi, AppShell akan otomatis re-sub
 
 ---
 
+## Debug / Test
+
+### Cek Push Subscription di Database
+
+```bash
+# Via API
+curl https://iot.ilhame.id/api/push/test
+
+# Via Prisma Studio
+cd smart-door-web && npm run db:studio
+```
+
+### Kirim Test Push
+
+```bash
+curl -X POST https://iot.ilhame.id/api/push/test
+```
+
+### Cek Console di Browser
+
+Buka DevTools → Console, cari log dengan prefix `[Push]`:
+- `[Push] Subscribed successfully` → berhasil
+- `[Push] Failed to fetch VAPID key:` → VAPID env belum diset
+- `[Push] VAPID not configured on server` → env belum diset
+- `[Push] Failed to save subscription:` → API endpoint bermasalah (cek CF Access)
+- `[Push] Subscription failed:` → browser/OS menolak push subscription
+
+---
+
 ## Troubleshooting
 
-### Push tidak masuk di iOS
+### PWA tidak bisa di-install di Android (hanya "Add to Home Screen")
+1. **Paling umum**: Cloudflare Access memblokir manifest. Lihat section Cloudflare Access di atas.
+2. Cek Console: jika ada error `net::ERR_FAILED` untuk `site.webmanifest` → ini pasti CF Access
+3. Pastikan manifest di-link dengan benar: `<link rel="manifest" href="/favicon/site.webmanifest">`
+4. Pastikan manifest memiliki `name`, `icons` (192+512px), `start_url`, `display: standalone`
+
+### Push subscription tidak tersimpan (database kosong)
+1. Buka Console, cari `[Push]` log — ini akan menunjukkan di step mana yang gagal
+2. Buka Settings di app → jika "Push not registered" muncul kuning → klik "Register Push Subscription"
+3. Cek `GET /api/push/test` untuk melihat isi tabel subscription
+4. Jika `subscribeToPush()` tidak terlog di console → service worker belum aktif
+
+### Push tidak masuk di iOS saat app ditutup
 1. Pastikan env `NEXT_PUBLIC_VAPID_PUBLIC_KEY` dan `VAPID_PRIVATE_KEY` sudah diset
 2. Pastikan PWA sudah di-install (Add to Home Screen), bukan dibuka di Safari biasa
 3. iOS 16.4+ diperlukan untuk Web Push di PWA
 4. Cek Settings → Notifications → Door Lock → pastikan enabled
+5. Pastikan ada subscription di database: `GET /api/push/test`
 
 ### Push tidak masuk di Android
 1. Buka Settings di app → pastikan "Notifications enabled" muncul hijau
-2. Pastikan tidak dalam mode Do Not Disturb
-3. Cek Chrome → Settings → Site settings → Notifications
-
-### Subscription tidak tersimpan
-Cek database: `SELECT * FROM push_subscriptions;`
-Atau via Prisma Studio: `npm run db:studio`
+2. Pastikan "Push notifications active" muncul (bukan "Push not registered")
+3. Pastikan tidak dalam mode Do Not Disturb
+4. Kirim test: `POST /api/push/test` → harusnya muncul notifikasi

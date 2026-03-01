@@ -38,6 +38,7 @@ import {
   subscribeToPush,
   isPushSubscribed,
 } from '@/lib/notifications';
+import toast from 'react-hot-toast';
 
 // ── PWA Install Section ──
 export function PWAInstallSection() {
@@ -48,6 +49,7 @@ export function PWAInstallSection() {
   const [androidDevice, setAndroidDevice] = useState(false);
   const [showIOSGuide, setShowIOSGuide] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [pushStatus, setPushStatus] = useState<'unknown' | 'subscribed' | 'not-subscribed' | 'subscribing'>('unknown');
 
   useEffect(() => {
     setIsInstalled(isPWAInstalled());
@@ -109,16 +111,40 @@ export function PWAInstallSection() {
     setNotifPermission(result);
     // Auto-subscribe to server push when permission granted
     if (result === 'granted') {
-      subscribeToPush().catch(() => {});
+      setPushStatus('subscribing');
+      const ok = await subscribeToPush();
+      setPushStatus(ok ? 'subscribed' : 'not-subscribed');
+      if (ok) {
+        toast.success('Push notifications enabled');
+      } else {
+        toast.error('Failed to register push subscription');
+      }
     }
   };
 
-  // On mount, ensure push subscription is active if permission already granted
+  const handleManualSubscribe = async () => {
+    setPushStatus('subscribing');
+    const ok = await subscribeToPush();
+    setPushStatus(ok ? 'subscribed' : 'not-subscribed');
+    if (ok) {
+      toast.success('Push registered successfully');
+    } else {
+      toast.error('Push registration failed — check console');
+    }
+  };
+
+  // On mount, check push subscription status
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (Notification.permission === 'granted') {
       isPushSubscribed().then((subscribed) => {
-        if (!subscribed) subscribeToPush().catch(() => {});
+        setPushStatus(subscribed ? 'subscribed' : 'not-subscribed');
+        if (!subscribed) {
+          // Auto-try subscribing
+          subscribeToPush().then((ok) => {
+            setPushStatus(ok ? 'subscribed' : 'not-subscribed');
+          });
+        }
       });
     }
   }, []);
@@ -187,11 +213,47 @@ export function PWAInstallSection() {
 
           {/* All OK */}
           {notifPermission === 'granted' && (
-            <div className="text-center py-1">
-              <p className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>
-                ✓ All set! You'll receive door notifications.
-              </p>
-            </div>
+            <>
+              {/* Push subscription status */}
+              {pushStatus === 'subscribed' && (
+                <div className="text-center py-1">
+                  <p className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>
+                    ✓ All set! Push notifications active.
+                  </p>
+                </div>
+              )}
+              {pushStatus === 'not-subscribed' && (
+                <div className="space-y-2">
+                  <div
+                    className="flex items-center gap-3 p-3 rounded-xl"
+                    style={{ background: 'var(--warning-light)', border: '1px solid color-mix(in srgb, var(--warning) 25%, transparent)' }}
+                  >
+                    <BellOff className="w-4 h-4 shrink-0" style={{ color: 'var(--warning-text)' }} />
+                    <span className="text-[12px]" style={{ color: 'var(--warning-text)' }}>
+                      Push not registered on server
+                    </span>
+                  </div>
+                  <Button onClick={handleManualSubscribe} variant="secondary" size="sm" className="w-full">
+                    <Bell className="w-3.5 h-3.5 mr-1.5" />
+                    Register Push Subscription
+                  </Button>
+                </div>
+              )}
+              {pushStatus === 'subscribing' && (
+                <div className="text-center py-1">
+                  <p className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>
+                    Registering push subscription...
+                  </p>
+                </div>
+              )}
+              {pushStatus === 'unknown' && (
+                <div className="text-center py-1">
+                  <p className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>
+                    Checking push status...
+                  </p>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

@@ -54,10 +54,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && 'PushManager' in window) {
             registration.pushManager.getSubscription().then((sub) => {
               if (!sub) {
-                // Lazy import to avoid circular deps
+                console.log('[Push] No existing subscription, auto-subscribing...');
                 import('@/lib/notifications').then(({ subscribeToPush }) => {
-                  subscribeToPush().catch(() => {});
+                  subscribeToPush().then((ok) => {
+                    console.log('[Push] Auto-subscribe result:', ok);
+                  });
                 });
+              } else {
+                console.log('[Push] Existing subscription found:', sub.endpoint.slice(0, 60) + '...');
               }
             });
           }

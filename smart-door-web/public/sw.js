@@ -1,31 +1,21 @@
-// Smart Door Lock — Service Worker v3
+// Smart Door Lock — Service Worker v4
 // ====================================
-// CACHE POLICY:
-//   - API routes (/api/*) → NEVER cached, always network (real-time MQTT data)
-//   - WebSocket/MQTT (wss://) → Not intercepted (different origin)
-//   - Navigation (HTML pages) → Network-only, NO cache (ensures fresh React bundles)
-//   - Static assets (/_next/static/*) → Cache-first (hashed filenames = immutable)
-//   - Favicon/icons → Cache-first (rarely change)
+// CACHE POLICY — minimal, safe for Cloudflare Access:
+//   - API routes (/api/*) → NEVER intercepted (real-time MQTT data)
+//   - Navigation (HTML pages) → NEVER intercepted (fresh React bundles)
+//   - Manifest (.webmanifest) → NEVER intercepted (Chrome needs direct access for PWA)
+//   - /_next/static/* → Cache-first (content-hashed, immutable per deploy)
+//   - Everything else → NEVER intercepted (pass-through)
 //
-// GUARANTEE: All data from MQTT and API is always fetched from network.
-//            Cache is ONLY used for immutable static assets (JS/CSS with content hash).
+// NO PRE-CACHING — Cloudflare Access/Tunnel can block fetch during SW install.
+// GUARANTEE: All data from MQTT and API is always real-time from network.
 
-const CACHE_NAME = 'smart-door-v3';
-
-// Only pre-cache icons (small, static, needed for notifications)
-const PRECACHE_URLS = [
-  '/favicon/android-chrome-192x192.png',
-  '/favicon/android-chrome-512x512.png',
-  '/favicon/favicon-32x32.png',
-];
+const CACHE_NAME = 'smart-door-v4';
 
 // ─── Install ───
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) =>
-      cache.addAll(PRECACHE_URLS).catch(() => {})
-    )
-  );
+// No precaching — skip straight to activation.
+// Cloudflare Access can block fetch() during install, causing SW to fail.
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
@@ -43,24 +33,16 @@ self.addEventListener('activate', (event) => {
 });
 
 // ─── Fetch ───
+// ONLY intercept /_next/static/* (immutable hashed assets).
+// Everything else passes through to the network untouched.
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-
-  // 1. Skip ALL non-GET requests (POST, PUT, DELETE, etc.)
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
 
-  // 2. NEVER cache API routes — data must always be real-time
-  if (url.pathname.startsWith('/api/')) return;
-
-  // 3. NEVER cache navigation requests (HTML pages)
-  //    Always fetch from network to ensure latest React/Next.js bundles
-  if (request.mode === 'navigate') return;
-
-  // 4. Cache-first for Next.js immutable static assets only
-  //    These have content hashes in filenames (e.g., _next/static/chunks/abc123.js)
-  //    so they are safe to cache permanently — new deploys = new filenames
+  // Only cache Next.js immutable static assets (content-hashed filenames).
+  // These are safe to cache forever — new deploy = new filename.
   if (url.pathname.startsWith('/_next/static/')) {
     event.respondWith(
       caches.match(request).then((cached) => {
@@ -71,30 +53,15 @@ self.addEventListener('fetch', (event) => {
             caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           }
           return response;
-        });
+        }).catch(() => caches.match(request));
       })
     );
     return;
   }
 
-  // 5. Cache-first for favicon/icons only
-  if (url.pathname.startsWith('/favicon/')) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached;
-        return fetch(request).then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        });
-      })
-    );
-    return;
-  }
-
-  // 6. Everything else — pass through to network (no cache)
+  // Everything else: DO NOT intercept.
+  // This ensures manifest, favicon, API, navigation all go directly to network.
+  // Critical for Cloudflare Access compatibility.
 });
 
 // ─── Push Notification ───
