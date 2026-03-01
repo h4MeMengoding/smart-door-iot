@@ -77,3 +77,16 @@ model SystemEvent {
   @@index([createdAt(sort: Desc)])
   @@map("system_events")
 }
+
+/// Tabel push_subscriptions - Web Push subscriptions for background notifications
+model PushSubscription {
+  id        String   @id @default(uuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("push_subscriptions")
+}

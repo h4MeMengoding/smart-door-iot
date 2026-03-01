@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { addAccessLog, getCardByUid, addSystemEvent } from '@/lib/db';
 import { prisma } from '@/lib/prisma';
 import { logEvents } from '@/lib/events';
+import { sendPushToAll } from '@/lib/webpush';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,6 +84,23 @@ export async function POST(request: NextRequest) {
     const evtType = accessResult === 'granted' ? 'access_granted' : 'access_denied';
     const evtDesc = `${accessType} ${accessResult}: ${displayName}`;
     addSystemEvent(evtType, evtDesc).catch(() => {});
+
+    // Send push notification to all subscribed clients (fire-and-forget)
+    // This enables iOS background notifications when PWA is closed
+    const pushType = accessResult === 'granted'
+      ? (accessType === 'RFID' ? 'rfid_access' : 'door_open')
+      : 'rfid_denied';
+    const pushTitle = accessResult === 'granted' ? 'Door Opened' : 'Access Denied';
+    const pushBody = accessResult === 'granted'
+      ? `${accessType === 'RFID' ? `RFID: ${displayName}` : accessType === 'TOUCH' ? 'Touch Sensor' : 'Web Dashboard'}`
+      : `Unauthorized ${accessType}: ${displayName}`;
+    sendPushToAll({
+      type: pushType,
+      title: pushTitle,
+      body: pushBody,
+      tag: `access-${accessResult}-${Date.now()}`,
+      timestamp: log.createdAt.toISOString(),
+    }).catch(() => {});
 
     return NextResponse.json({ success: true, log: mappedLog });
   } catch (error) {

@@ -326,10 +326,8 @@ export default function DashboardPage() {
       if (!success) {
         toast.error(`Access denied: ${uid}`);
         sendLocalNotification('rfid_denied', 'Access Denied', `Unauthorized card: ${uid}`, 'rfid-denied');
-      } else {
-        toast.success(`Card ${uid} authorized`);
-        sendLocalNotification('rfid_access', 'RFID Access', `Card ${uid} authorized`, 'rfid-access');
       }
+      // Success toast is NOT shown here — door_status handler already shows "Door unlocked via RFID"
 
     } else if (message.type === 'system_info' && message.data) {
       // ── System info from ESP32 (every 30s, retained) ──

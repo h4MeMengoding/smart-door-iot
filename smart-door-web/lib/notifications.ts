@@ -68,6 +68,90 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
     : await Notification.requestPermission();
 }
 
+/**
+ * Subscribe to server-side Web Push notifications.
+ * Called after the user grants notification permission.
+ * This enables push notifications even when the PWA is closed (critical for iOS).
+ */
+export async function subscribeToPush(): Promise<boolean> {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+
+    // Get VAPID public key from server
+    const res = await fetch('/api/push/subscribe');
+    const { publicKey, configured } = await res.json();
+    if (!configured || !publicKey) return false;
+
+    const registration = await navigator.serviceWorker.ready;
+
+    // Check if already subscribed
+    let subscription = await registration.pushManager.getSubscription();
+
+    if (!subscription) {
+      // Convert VAPID key to Uint8Array
+      const applicationServerKey = urlBase64ToUint8Array(publicKey);
+      subscription = await registration.pushManager.subscribe({
+        userVisibleNotificationsOnly: true,
+        applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
+      } as PushSubscriptionOptionsInit);
+    }
+
+    // Send subscription to server
+    const subJson = subscription.toJSON();
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subscription: {
+          endpoint: subJson.endpoint,
+          keys: subJson.keys,
+        },
+        userAgent: navigator.userAgent,
+      }),
+    });
+
+    return true;
+  } catch (err) {
+    console.error('Push subscription failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Unsubscribe from server-side Web Push notifications.
+ */
+export async function unsubscribeFromPush(): Promise<void> {
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (subscription) {
+      const endpoint = subscription.endpoint;
+      await subscription.unsubscribe();
+      await fetch('/api/push/subscribe', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint }),
+      }).catch(() => {});
+    }
+  } catch {
+    // Silent fail
+  }
+}
+
+/**
+ * Check if push subscription is active
+ */
+export async function isPushSubscribed(): Promise<boolean> {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    return !!subscription;
+  } catch {
+    return false;
+  }
+}
+
 export async function sendLocalNotification(
   type: NotificationType,
   title: string,
@@ -90,6 +174,7 @@ export async function sendLocalNotification(
       icon: '/favicon/android-chrome-192x192.png',
       badge: '/favicon/favicon-32x32.png',
       tag: tag || `smart-door-${type}-${Date.now()}`,
+      renotify: true,
     } as NotificationOptions);
   } catch {
     // Fallback to regular Notification API
@@ -117,7 +202,7 @@ export function isPWAInstalled(): boolean {
 
 // Check if app can be installed (beforeinstallprompt fired)
 export function isInstallable(): boolean {
-  return typeof window !== 'undefined' && !!(window as unknown as { deferredInstallPrompt?: unknown }).deferredInstallPrompt;
+  return typeof window !== 'undefined' && !!(window as unknown as { __pwaInstallPrompt?: unknown }).__pwaInstallPrompt;
 }
 
 // Detect iOS
@@ -131,4 +216,17 @@ export function isIOS(): boolean {
 export function isAndroid(): boolean {
   if (typeof window === 'undefined') return false;
   return /Android/.test(navigator.userAgent);
+}
+
+// ── Utility ──
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
 }

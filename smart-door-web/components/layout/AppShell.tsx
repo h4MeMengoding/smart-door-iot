@@ -31,10 +31,63 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Register service worker for PWA + Push Notifications
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
-        // SW registration failed — non-critical
+      navigator.serviceWorker
+        .register('/sw.js', { scope: '/' })
+        .then((registration) => {
+          // Check for SW updates periodically (every 60s)
+          setInterval(() => registration.update(), 60_000);
+
+          // When a new SW is waiting, auto-activate it
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            if (newWorker) {
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // New SW ready — tell it to activate immediately
+                  newWorker.postMessage('skipWaiting');
+                }
+              });
+            }
+          });
+
+          // Auto-subscribe to server push if permission already granted
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && 'PushManager' in window) {
+            registration.pushManager.getSubscription().then((sub) => {
+              if (!sub) {
+                // Lazy import to avoid circular deps
+                import('@/lib/notifications').then(({ subscribeToPush }) => {
+                  subscribeToPush().catch(() => {});
+                });
+              }
+            });
+          }
+        })
+        .catch(() => {
+          // SW registration failed — non-critical
+        });
+
+      // Reload page when new SW takes over (seamless update)
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
       });
     }
+
+    // Capture beforeinstallprompt globally so it's available when Settings opens later
+    const handleInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      (window as unknown as Record<string, unknown>).__pwaInstallPrompt = e;
+      // Dispatch custom event so any mounted component can react
+      window.dispatchEvent(new CustomEvent('pwa-install-available'));
+    };
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+    };
   }, []);
 
   return (

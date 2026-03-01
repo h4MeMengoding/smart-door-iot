@@ -35,6 +35,8 @@ import {
   isPWAInstalled,
   isIOS,
   isAndroid,
+  subscribeToPush,
+  isPushSubscribed,
 } from '@/lib/notifications';
 
 // ── PWA Install Section ──
@@ -45,6 +47,7 @@ export function PWAInstallSection() {
   const [iosDevice, setIosDevice] = useState(false);
   const [androidDevice, setAndroidDevice] = useState(false);
   const [showIOSGuide, setShowIOSGuide] = useState(false);
+  const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
     setIsInstalled(isPWAInstalled());
@@ -52,40 +55,73 @@ export function PWAInstallSection() {
     setAndroidDevice(isAndroid());
     setNotifPermission(getNotificationPermission());
 
-    // Listen for beforeinstallprompt (Android/Chrome)
-    const handler = (e: Event) => {
+    // Check if global prompt was already captured by AppShell
+    const globalPrompt = (window as unknown as Record<string, unknown>).__pwaInstallPrompt as Event | undefined;
+    if (globalPrompt) {
+      setInstallPrompt(globalPrompt);
+    }
+
+    // Listen for new beforeinstallprompt (from AppShell global capture)
+    const handler = () => {
+      const prompt = (window as unknown as Record<string, unknown>).__pwaInstallPrompt as Event | undefined;
+      if (prompt) setInstallPrompt(prompt);
+    };
+    window.addEventListener('pwa-install-available', handler);
+
+    // Also listen for the raw event in case AppShell hasn't captured it yet
+    const rawHandler = (e: Event) => {
       e.preventDefault();
       setInstallPrompt(e);
-      // Store globally for reference
-      (window as unknown as Record<string, unknown>).deferredInstallPrompt = e;
+      (window as unknown as Record<string, unknown>).__pwaInstallPrompt = e;
     };
-    window.addEventListener('beforeinstallprompt', handler);
+    window.addEventListener('beforeinstallprompt', rawHandler);
 
     // Listen for appinstalled
     const installedHandler = () => setIsInstalled(true);
     window.addEventListener('appinstalled', installedHandler);
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('pwa-install-available', handler);
+      window.removeEventListener('beforeinstallprompt', rawHandler);
       window.removeEventListener('appinstalled', installedHandler);
     };
   }, []);
 
   const handleInstall = async () => {
     if (!installPrompt) return;
-    const prompt = installPrompt as Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
-    await prompt.prompt();
-    const result = await prompt.userChoice;
-    if (result.outcome === 'accepted') {
-      setIsInstalled(true);
-      setInstallPrompt(null);
+    setInstalling(true);
+    try {
+      const prompt = installPrompt as Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
+      await prompt.prompt();
+      const result = await prompt.userChoice;
+      if (result.outcome === 'accepted') {
+        setIsInstalled(true);
+        setInstallPrompt(null);
+        (window as unknown as Record<string, unknown>).__pwaInstallPrompt = undefined;
+      }
+    } finally {
+      setInstalling(false);
     }
   };
 
   const handleRequestNotification = async () => {
     const result = await requestNotificationPermission();
     setNotifPermission(result);
+    // Auto-subscribe to server push when permission granted
+    if (result === 'granted') {
+      subscribeToPush().catch(() => {});
+    }
   };
+
+  // On mount, ensure push subscription is active if permission already granted
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (Notification.permission === 'granted') {
+      isPushSubscribed().then((subscribed) => {
+        if (!subscribed) subscribeToPush().catch(() => {});
+      });
+    }
+  }, []);
 
   // Already installed — show status
   if (isInstalled) {
@@ -175,9 +211,9 @@ export function PWAInstallSection() {
       <CardContent className="space-y-3">
         {/* Android / Desktop Chrome — native install prompt */}
         {installPrompt && (
-          <Button onClick={handleInstall} variant="primary" size="sm" className="w-full">
+          <Button onClick={handleInstall} variant="primary" size="sm" className="w-full" disabled={installing}>
             <Download className="w-3.5 h-3.5 mr-1.5" />
-            Install App
+            {installing ? 'Installing...' : 'Install App'}
           </Button>
         )}
 
@@ -226,19 +262,16 @@ export function PWAInstallSection() {
           </div>
         )}
 
-        {/* Android — no prompt available yet */}
+        {/* Android — no prompt available yet, guide to Chrome */}
         {androidDevice && !installPrompt && (
-          <div
-            className="flex items-center gap-3 p-3 rounded-xl"
-            style={{ background: 'var(--info-light)', border: '1px solid color-mix(in srgb, var(--info) 25%, transparent)' }}
-          >
-            <Smartphone className="w-4 h-4 shrink-0" style={{ color: 'var(--info-text)' }} />
-            <div>
-              <p className="text-[12px] font-medium" style={{ color: 'var(--info-text)' }}>
-                Open in Chrome to install
-              </p>
-              <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                Use Chrome browser menu → &quot;Add to Home screen&quot;
+          <div className="space-y-2">
+            <div
+              className="flex items-center gap-3 p-3 rounded-xl"
+              style={{ background: 'var(--info-light)', border: '1px solid color-mix(in srgb, var(--info) 25%, transparent)' }}
+            >
+              <Smartphone className="w-4 h-4 shrink-0" style={{ color: 'var(--info-text)' }} />
+              <p className="text-[12px]" style={{ color: 'var(--info-text)' }}>
+                Open this page in <strong>Chrome</strong> to enable the install button
               </p>
             </div>
           </div>

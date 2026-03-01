@@ -55,7 +55,7 @@ export function FloatingDoorButton({ isLocked, onAction, status }: FloatingDoorB
     try {
       const result = isLocked ? await api.unlockDoor() : await api.lockDoor();
       if (result.success) {
-        toast.success(isLocked ? 'Door unlocked' : 'Door locked');
+        // Toast will be shown by WebSocket door_status handler when state actually changes
         logSystemEvent(isLocked ? 'door_unlocked' : 'door_locked', `Door ${isLocked ? 'unlocked' : 'locked'} via mobile button`);
         onAction?.();
       } else {

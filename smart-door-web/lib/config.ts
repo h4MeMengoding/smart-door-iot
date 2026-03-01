@@ -22,6 +22,11 @@ export const MQTT_CONFIG = {
 export const ESP32_OTA_URL = process.env.ESP32_OTA_URL || 'https://esp.ilhame.id/ota';
 export const ESP32_OTA_PASSWORD = process.env.ESP32_OTA_PASSWORD || '';
 
+// Web Push (VAPID) configuration
+// Generate with: npx web-push generate-vapid-keys
+export const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
+export const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
+
 // API key getter
 export function getApiKey(): string {
   return API_KEY;
