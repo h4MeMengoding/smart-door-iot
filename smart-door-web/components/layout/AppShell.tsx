@@ -50,19 +50,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             }
           });
 
-          // Auto-subscribe to server push if permission already granted
+          // Auto-subscribe / refresh push subscription on every app load.
+          // iOS APNs can silently rotate endpoints — always re-sync keys to server.
           if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && 'PushManager' in window) {
-            registration.pushManager.getSubscription().then((sub) => {
-              if (!sub) {
-                console.log('[Push] No existing subscription, auto-subscribing...');
-                import('@/lib/notifications').then(({ subscribeToPush }) => {
-                  subscribeToPush().then((ok) => {
-                    console.log('[Push] Auto-subscribe result:', ok);
-                  });
-                });
-              } else {
-                console.log('[Push] Existing subscription found:', sub.endpoint.slice(0, 60) + '...');
-              }
+            import('@/lib/notifications').then(({ subscribeToPush }) => {
+              subscribeToPush().then((ok) => {
+                console.log('[Push] Subscription sync result:', ok);
+              });
             });
           }
         })

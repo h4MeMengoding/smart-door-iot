@@ -1,4 +1,4 @@
-// Smart Door Lock — Service Worker v4
+// Smart Door Lock — Service Worker v5
 // ====================================
 // CACHE POLICY — minimal, safe for Cloudflare Access:
 //   - API routes (/api/*) → NEVER intercepted (real-time MQTT data)
@@ -10,7 +10,7 @@
 // NO PRE-CACHING — Cloudflare Access/Tunnel can block fetch during SW install.
 // GUARANTEE: All data from MQTT and API is always real-time from network.
 
-const CACHE_NAME = 'smart-door-v4';
+const CACHE_NAME = 'smart-door-v5';
 
 // ─── Install ───
 // No precaching — skip straight to activation.
@@ -69,7 +69,19 @@ self.addEventListener('fetch', (event) => {
 // Server sends: { data: { type, title, body, tag, url, timestamp } }
 // We MUST call showNotification() here for the notification to appear.
 self.addEventListener('push', (event) => {
-  if (!event.data) return;
+  // CRITICAL: Always call event.waitUntil() even if no data.
+  // On iOS, failing to show a notification may revoke push permission.
+  if (!event.data) {
+    event.waitUntil(
+      self.registration.showNotification('Smart Door Lock', {
+        body: 'New event',
+        icon: '/favicon/android-chrome-192x192.png',
+        badge: '/favicon/favicon-32x32.png',
+        tag: 'smart-door-fallback',
+      })
+    );
+    return;
+  }
 
   let payload;
   try {
@@ -107,10 +119,61 @@ self.addEventListener('push', (event) => {
     requireInteraction: isAlert,
     renotify: true,
     silent: false,
+    // iOS shows timestamp in notification shade
+    timestamp: timestamp ? new Date(timestamp).getTime() : Date.now(),
   };
 
   event.waitUntil(
     self.registration.showNotification(title, options)
+  );
+});
+
+// ─── Push Subscription Change (iOS endpoint rotation) ───
+// When iOS APNs rotates the push endpoint, re-subscribe and sync to server.
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        // Delete old subscription from server if available
+        if (event.oldSubscription) {
+          await fetch('/api/push/subscribe', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: event.oldSubscription.endpoint }),
+          }).catch(() => {});
+        }
+
+        // Get VAPID public key
+        const keyRes = await fetch('/api/push/subscribe');
+        if (!keyRes.ok) return;
+        const { publicKey } = await keyRes.json();
+        if (!publicKey) return;
+
+        // Re-subscribe with new endpoint
+        const applicationServerKey = urlBase64ToUint8Array(publicKey);
+        const newSub = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey.buffer,
+        });
+
+        // Sync new subscription to server
+        const subJson = newSub.toJSON();
+        await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subscription: {
+              endpoint: subJson.endpoint,
+              keys: subJson.keys,
+            },
+            userAgent: 'SW-pushsubscriptionchange',
+          }),
+        });
+        console.log('[SW] Push subscription rotated and re-synced');
+      } catch (err) {
+        console.error('[SW] pushsubscriptionchange failed:', err);
+      }
+    })()
   );
 });
 
@@ -140,3 +203,15 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
 });
+
+// ─── Utility: Base64URL → Uint8Array (for VAPID key in SW context) ───
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}

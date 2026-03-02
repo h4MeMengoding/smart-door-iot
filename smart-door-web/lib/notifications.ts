@@ -72,6 +72,9 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
  * Subscribe to server-side Web Push notifications.
  * Called after the user grants notification permission.
  * This enables push notifications even when the PWA is closed (critical for iOS).
+ *
+ * Always re-syncs the subscription keys to the server, even if already subscribed.
+ * This handles iOS APNs silently rotating push endpoints.
  */
 export async function subscribeToPush(): Promise<boolean> {
   try {
@@ -94,8 +97,37 @@ export async function subscribeToPush(): Promise<boolean> {
 
     const registration = await navigator.serviceWorker.ready;
 
-    // Check if already subscribed
+    // Check existing subscription
     let subscription = await registration.pushManager.getSubscription();
+
+    if (subscription) {
+      // Validate existing subscription is still valid
+      // iOS can silently invalidate subscriptions — re-subscribe if keys change
+      try {
+        // Force re-sync keys to server (endpoint may have rotated)
+        const subJson = subscription.toJSON();
+        const syncRes = await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subscription: {
+              endpoint: subJson.endpoint,
+              keys: subJson.keys,
+            },
+            userAgent: navigator.userAgent,
+          }),
+        });
+        if (syncRes.ok) {
+          console.log('[Push] Existing subscription re-synced to server');
+          return true;
+        }
+      } catch {
+        // Sync failed — try to create a fresh subscription
+        console.warn('[Push] Re-sync failed, creating fresh subscription');
+        await subscription.unsubscribe().catch(() => {});
+        subscription = null;
+      }
+    }
 
     if (!subscription) {
       // Convert VAPID key to Uint8Array
@@ -179,8 +211,8 @@ export async function sendLocalNotification(
   // Check if this notification type is enabled
   if (!prefs[type]) return;
 
-  // Check permission
-  if (Notification.permission !== 'granted') return;
+  // Guard: Notification API may not exist on iOS Safari (non-PWA)
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
 
   // Get service worker registration
   try {
