@@ -1,12 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Shield, LogOut, Check, AlertCircle, Eye, EyeOff, KeyRound } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { useRouter } from 'next/navigation';
 
 /** 6-digit PIN input row */
 function PinInput({
@@ -98,20 +96,14 @@ function PinInput({
 }
 
 export function SecuritySettings() {
-  const router = useRouter();
   const [pinConfigured, setPinConfigured] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPin, setShowPin] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
-  // For first-time setup
   const [newPin, setNewPin] = useState('');
-
-  // For changing PIN
   const [currentPin, setCurrentPin] = useState('');
   const [changePin, setChangePin] = useState('');
-
-  // Success state
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
@@ -209,181 +201,143 @@ export function SecuritySettings() {
 
   if (pinConfigured === null) {
     return (
-      <Card variant="bordered">
-        <CardContent className="py-6">
-          <div className="flex items-center justify-center">
-            <div
-              className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin"
-              style={{ borderColor: 'var(--border-strong)', borderTopColor: 'transparent' }}
-            />
-          </div>
-        </CardContent>
-      </Card>
+      <div
+        className="rounded-xl flex items-center justify-center py-5"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}
+      >
+        <div
+          className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin"
+          style={{ borderColor: 'var(--border-strong)', borderTopColor: 'transparent' }}
+        />
+      </div>
     );
   }
 
   return (
-    <>
-      <Card variant="bordered">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm">
+    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+      {/* PIN section */}
+      <div className="px-3 py-3" style={{ background: 'var(--bg-surface)' }}>
+        <div className="flex items-center gap-3 mb-3">
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: 'var(--primary-light)' }}
+          >
             <Shield className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-            Security
-          </CardTitle>
-          <CardDescription>
-            {pinConfigured ? 'Manage your access PIN' : 'Set a PIN to protect the dashboard'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <AnimatePresence mode="wait">
-            {success ? (
-              <motion.div
-                key="success"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="flex items-center justify-center gap-2 py-4"
-              >
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center"
-                  style={{ background: 'var(--success-light)' }}
-                >
-                  <Check className="w-4 h-4" style={{ color: 'var(--success-text)' }} />
-                </div>
-                <span className="text-sm font-medium" style={{ color: 'var(--success-text)' }}>
-                  {pinConfigured ? 'PIN updated' : 'PIN set'}
-                </span>
-              </motion.div>
-            ) : !pinConfigured ? (
-              /* First-time PIN setup */
-              <motion.div
-                key="setup"
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -5 }}
-                className="space-y-3"
-              >
-                <div
-                  className="flex items-start gap-2 p-2.5 rounded-xl text-[11px]"
-                  style={{
-                    background: 'color-mix(in srgb, var(--primary) 8%, transparent)',
-                    border: '1px solid color-mix(in srgb, var(--primary) 20%, transparent)',
-                  }}
-                >
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: 'var(--primary)' }} />
-                  <span style={{ color: 'var(--text-secondary)' }}>
-                    No PIN configured. Set a 6-digit PIN to protect the dashboard.
-                  </span>
-                </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {pinConfigured ? 'Change PIN' : 'Set PIN'}
+            </p>
+            <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              {pinConfigured ? '6-digit access PIN' : 'Protect the dashboard with a PIN'}
+            </p>
+          </div>
+          <button
+            onClick={() => setShowPin(!showPin)}
+            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors"
+            style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-muted)' }}
+          >
+            {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          </button>
+        </div>
 
-                <div className="flex items-end gap-3">
-                  <PinInput
-                    value={newPin}
-                    onChange={setNewPin}
-                    disabled={loading}
-                    showPin={showPin}
-                    autoFocus={false}
-                    label="New PIN"
-                  />
-                  <button
-                    onClick={() => setShowPin(!showPin)}
-                    className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors shrink-0"
-                    style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-muted)' }}
-                  >
-                    {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-
-                <Button
-                  onClick={handleSetPin}
-                  isLoading={loading}
-                  disabled={newPin.length !== 6}
-                  size="sm"
-                  className="w-full"
-                >
-                  <KeyRound className="w-3.5 h-3.5 mr-1.5" />
-                  Set PIN
-                </Button>
-              </motion.div>
-            ) : (
-              /* Change existing PIN */
-              <motion.div
-                key="change"
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -5 }}
-                className="space-y-3"
-              >
-                <div className="flex items-end gap-3">
-                  <div className="flex-1 space-y-2.5">
-                    <PinInput
-                      value={currentPin}
-                      onChange={setCurrentPin}
-                      disabled={loading}
-                      showPin={showPin}
-                      label="Current PIN"
-                    />
-                    <PinInput
-                      value={changePin}
-                      onChange={setChangePin}
-                      disabled={loading}
-                      showPin={showPin}
-                      label="New PIN"
-                    />
-                  </div>
-                  <button
-                    onClick={() => setShowPin(!showPin)}
-                    className="w-10 h-10 rounded-lg flex items-center justify-center transition-colors shrink-0 mb-0.5"
-                    style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-muted)' }}
-                  >
-                    {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-
-                <Button
-                  onClick={handleChangePin}
-                  isLoading={loading}
-                  disabled={currentPin.length !== 6 || changePin.length !== 6}
-                  variant="secondary"
-                  size="sm"
-                  className="w-full"
-                >
-                  <KeyRound className="w-3.5 h-3.5 mr-1.5" />
-                  Change PIN
-                </Button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </CardContent>
-      </Card>
-
-      {/* Logout */}
-      {pinConfigured && (
-        <Card variant="bordered">
-          <CardContent className="py-3">
-            <div
-              className="flex items-center justify-between p-3 rounded-xl"
-              style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}
+        <AnimatePresence mode="wait">
+          {success ? (
+            <motion.div
+              key="success"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="flex items-center justify-center gap-2 py-3"
             >
-              <div>
-                <p className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Sign Out</p>
-                <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  End your session and return to login
-                </p>
+              <div
+                className="w-7 h-7 rounded-full flex items-center justify-center"
+                style={{ background: 'var(--success-light)' }}
+              >
+                <Check className="w-3.5 h-3.5" style={{ color: 'var(--success-text)' }} />
               </div>
+              <span className="text-[12px] font-medium" style={{ color: 'var(--success-text)' }}>
+                {pinConfigured ? 'PIN updated' : 'PIN set'}
+              </span>
+            </motion.div>
+          ) : !pinConfigured ? (
+            <motion.div
+              key="setup"
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              className="space-y-2.5"
+            >
+              <div
+                className="flex items-start gap-2 px-2.5 py-2 rounded-lg text-[10px]"
+                style={{
+                  background: 'color-mix(in srgb, var(--primary) 8%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--primary) 20%, transparent)',
+                }}
+              >
+                <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" style={{ color: 'var(--primary)' }} />
+                <span style={{ color: 'var(--text-secondary)' }}>No PIN configured yet.</span>
+              </div>
+
+              <PinInput value={newPin} onChange={setNewPin} disabled={loading} showPin={showPin} autoFocus={false} label="New PIN" />
+
+              <Button onClick={handleSetPin} isLoading={loading} disabled={newPin.length !== 6} size="sm" className="w-full">
+                <KeyRound className="w-3.5 h-3.5 mr-1.5" />
+                Set PIN
+              </Button>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="change"
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              className="space-y-2.5"
+            >
+              <PinInput value={currentPin} onChange={setCurrentPin} disabled={loading} showPin={showPin} label="Current PIN" />
+              <PinInput value={changePin} onChange={setChangePin} disabled={loading} showPin={showPin} label="New PIN" />
+
               <Button
-                onClick={handleLogout}
-                isLoading={loggingOut}
+                onClick={handleChangePin}
+                isLoading={loading}
+                disabled={currentPin.length !== 6 || changePin.length !== 6}
                 variant="secondary"
                 size="sm"
+                className="w-full"
               >
-                <LogOut className="w-3.5 h-3.5 mr-1.5" />
-                Logout
+                <KeyRound className="w-3.5 h-3.5 mr-1.5" />
+                Change PIN
               </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Logout row */}
+      {pinConfigured && (
+        <>
+          <div style={{ height: 1, background: 'var(--border)' }} />
+          <div
+            className="px-3 py-2.5 flex items-center gap-3"
+            style={{ background: 'var(--bg-surface)' }}
+          >
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: 'var(--danger-light)' }}
+            >
+              <LogOut className="w-4 h-4" style={{ color: 'var(--danger)' }} />
             </div>
-          </CardContent>
-        </Card>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Sign Out</p>
+              <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>End session &amp; return to login</p>
+            </div>
+            <Button onClick={handleLogout} isLoading={loggingOut} variant="secondary" size="sm" className="text-[11px] !px-2.5 !py-1.5">
+              <LogOut className="w-3 h-3 mr-1" />
+              Logout
+            </Button>
+          </div>
+        </>
       )}
-    </>
+    </div>
   );
 }

@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { X, Wifi, Volume2, Power, Settings as SettingsIcon, Sun, Moon, Clock, RefreshCw, Terminal } from 'lucide-react';
+import {
+  X, Wifi, Volume2, Sun, Moon, Clock, RefreshCw, Terminal,
+  ChevronRight, Monitor,
+} from 'lucide-react';
 import { getMqttWsUrl } from '@/lib/config';
 import { api } from '@/lib/api';
 import { EspTime } from '@/lib/types';
@@ -19,34 +21,39 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
+/* ─── Section label ─── */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      className="text-[10px] font-bold uppercase tracking-widest px-1 mb-1.5"
+      style={{ color: 'var(--text-muted)' }}
+    >
+      {children}
+    </p>
+  );
+}
+
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const [mqttWsUrl, setMqttWsUrlState] = useState(() => getMqttWsUrl());
+  const [mqttWsUrl] = useState(() => getMqttWsUrl());
   const [isRestarting, setIsRestarting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const { theme, setTheme } = useTheme();
 
-  // ESP32 Clock state
+  // ESP32 Clock
   const [espTime, setEspTime] = useState<EspTime | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [clockLoading, setClockLoading] = useState(false);
   const clockIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Track if we already auto-pushed time this session
   const timePushedRef = useRef(false);
 
-  // System Event Log state
+  // Event log
   const [events, setEvents] = useState<{ id: string; eventType: string; description: string | null; createdAt: string }[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
-  const eventLogRef = useRef<HTMLDivElement>(null);
+  const [showEventLog, setShowEventLog] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setMqttWsUrlState(getMqttWsUrl());
-      // Fetch ESP32 time
       fetchEspTime();
-      // Start polling ESP32 clock every 2s
       clockIntervalRef.current = setInterval(fetchEspTime, 2000);
-      // Fetch system events
       fetchEvents();
     }
     return () => {
@@ -57,7 +64,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     };
   }, [isOpen]);
 
-  // Close on Escape
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -76,9 +82,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     try {
       const t = await api.getEspTime();
       setEspTime(t);
-      setClockLoading(false);
-
-      // Auto-push browser time if ESP32 NTP is not synced
       if (!t.ntpSynced && !timePushedRef.current) {
         timePushedRef.current = true;
         try {
@@ -87,31 +90,23 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           if (result.success) {
             toast.success(`Time set from browser: ${result.time}`);
             logSystemEvent('time_set', `Time set from browser (auto): ${result.time}`);
-            // Re-fetch to update display
             const updated = await api.getEspTime();
             setEspTime(updated);
           }
-        } catch {
-          // Browser push also failed
-        }
+        } catch { /* ignore */ }
       }
-    } catch {
-      // ESP32 offline
-      setClockLoading(false);
-    }
+    } catch { /* esp offline */ }
   };
 
   const handleSyncTime = async () => {
     setIsSyncing(true);
     try {
-      // 1. Try NTP sync first
       const result = await api.syncEspTime();
       if (result.success) {
         toast.success(`NTP synced: ${result.time || 'OK'}`);
         logSystemEvent('ntp_sync', `NTP synced: ${result.time}`);
         await fetchEspTime();
       } else {
-        // 2. NTP failed — fallback to browser push
         toast('NTP failed, pushing browser time...', { icon: '⏱️' });
         const epoch = Math.floor(Date.now() / 1000);
         const pushResult = await api.setEspTime(epoch);
@@ -119,12 +114,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           toast.success(`Time set from browser: ${pushResult.time}`);
           logSystemEvent('time_set', `Time set from browser (manual): ${pushResult.time}`);
           await fetchEspTime();
-        } else {
-          toast.error('Failed to set time');
-        }
+        } else toast.error('Failed to set time');
       }
     } catch {
-      // Last resort: try browser push
       try {
         const epoch = Math.floor(Date.now() / 1000);
         const pushResult = await api.setEspTime(epoch);
@@ -132,46 +124,28 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           toast.success(`Time set from browser: ${pushResult.time}`);
           logSystemEvent('time_set', `Time set from browser (fallback): ${pushResult.time}`);
           await fetchEspTime();
-        } else {
-          toast.error('Failed to sync ESP32 time');
-        }
-      } catch {
-        toast.error('Failed to sync ESP32 time');
-      }
-    } finally {
-      setIsSyncing(false);
-    }
+        } else toast.error('Failed to sync time');
+      } catch { toast.error('Failed to sync time'); }
+    } finally { setIsSyncing(false); }
   };
 
   const fetchEvents = async () => {
     setEventsLoading(true);
     try {
       const res = await fetch('/api/system-events');
-      if (res.ok) {
-        const data = await res.json();
-        setEvents(data);
-      }
-    } catch { /* ignore */ } finally {
-      setEventsLoading(false);
-    }
+      if (res.ok) setEvents(await res.json());
+    } catch { /* ignore */ } finally { setEventsLoading(false); }
   };
 
-
   const handleRestartEsp = async () => {
-    if (!confirm('Are you sure you want to restart the ESP32? The device will be offline for a few seconds.')) return;
+    if (!confirm('Restart the ESP32? It will be offline for a few seconds.')) return;
     setIsRestarting(true);
     try {
       await api.restartEsp();
       toast.success('ESP32 is restarting...');
       logSystemEvent('esp_restart', 'ESP32 restarted from settings');
-      setTimeout(() => {
-        toast.success('ESP32 should be back online now');
-        setIsRestarting(false);
-      }, 10000);
-    } catch {
-      toast.error('Failed to restart ESP32');
-      setIsRestarting(false);
-    }
+      setTimeout(() => { toast.success('ESP32 should be back online'); setIsRestarting(false); }, 10000);
+    } catch { toast.error('Failed to restart'); setIsRestarting(false); }
   };
 
   const handleTestBuzzer = async () => {
@@ -180,24 +154,18 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       await api.playBuzzer('VALID_CARD');
       toast.success('Buzzer test sent');
       logSystemEvent('buzzer_test', 'Buzzer test played');
-    } catch {
-      toast.error('Failed to test buzzer');
-    } finally {
-      setIsTesting(false);
-    }
+    } catch { toast.error('Failed to test buzzer'); }
+    finally { setIsTesting(false); }
   };
 
   const handleTestConnection = async () => {
     setIsTesting(true);
     try {
-      toast.loading('Testing MQTT connection...', { id: 'test-conn' });
+      toast.loading('Testing...', { id: 'test-conn' });
       const status = await api.getDoorStatus();
-      toast.success(`Connected via MQTT! Door is ${status.doorStatus}`, { id: 'test-conn' });
-    } catch {
-      toast.error('MQTT connection failed. Check broker URL and credentials.', { id: 'test-conn' });
-    } finally {
-      setIsTesting(false);
-    }
+      toast.success(`Connected! Door: ${status.doorStatus}`, { id: 'test-conn' });
+    } catch { toast.error('Connection failed', { id: 'test-conn' }); }
+    finally { setIsTesting(false); }
   };
 
   return (
@@ -205,7 +173,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       {isOpen && (
         <motion.div
           key="settings-modal"
-          className="fixed inset-0 z-[60] flex items-center justify-center"
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -214,294 +182,320 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           {/* Backdrop */}
           <div
             className="absolute inset-0"
-            style={{ background: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)' }}
+            style={{ background: 'rgba(0, 0, 0, 0.5)', backdropFilter: 'blur(4px)' }}
             onClick={onClose}
           />
 
-          {/* Modal */}
+          {/* Panel — bottom sheet on mobile, centered modal on desktop */}
           <motion.div
-            initial={{ scale: 0.95, y: 20 }}
-            animate={{ scale: 1, y: 0 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto mx-4 rounded-3xl"
-        style={{
-          background: 'var(--bg-base)',
-          border: '1px solid var(--border)',
-          boxShadow: 'var(--shadow-lg)',
-        }}
-      >
-        {/* Header */}
-        <div
-          className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 rounded-t-3xl"
-          style={{
-            background: 'var(--bg-base)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{ background: 'var(--primary-light)' }}
-            >
-              <SettingsIcon className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Settings</h2>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Configure your smart door lock</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors"
-            style={{ color: 'var(--text-muted)' }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'var(--bg-elevated)';
-              e.currentTarget.style.color = 'var(--text-primary)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.color = 'var(--text-muted)';
+            initial={{ y: 40, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 40, opacity: 0 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+            className="relative w-full sm:max-w-md max-h-[92dvh] sm:max-h-[85vh] overflow-hidden sm:mx-4 rounded-t-2xl sm:rounded-2xl flex flex-col"
+            style={{
+              background: 'var(--bg-base)',
+              border: '1px solid var(--border)',
+              boxShadow: 'var(--shadow-lg)',
             }}
           >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+            {/* ── Header ── */}
+            <div
+              className="flex items-center justify-between px-5 py-3.5 shrink-0"
+              style={{ borderBottom: '1px solid var(--border)' }}
+            >
+              {/* Mobile drag indicator */}
+              <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full sm:hidden" style={{ background: 'var(--border-strong)' }} />
+              <h2 className="text-[15px] font-bold" style={{ color: 'var(--text-primary)' }}>Settings</h2>
+              <button
+                onClick={onClose}
+                className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-4">
-          {/* Appearance */}
-          <Card variant="bordered">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Sun className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                Appearance
-              </CardTitle>
-              <CardDescription>Choose your preferred theme</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setTheme('light')}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-medium transition-all"
-                  style={{
-                    background: theme === 'light' ? 'var(--primary)' : 'var(--bg-surface-hover)',
-                    color: theme === 'light' ? 'var(--primary-text)' : 'var(--text-secondary)',
-                    border: theme === 'light' ? '1px solid var(--primary)' : '1px solid var(--border)',
-                  }}
-                >
-                  <Sun className="w-4 h-4" />
-                  Light
-                </button>
-                <button
-                  onClick={() => setTheme('dark')}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-medium transition-all"
-                  style={{
-                    background: theme === 'dark' ? 'var(--primary)' : 'var(--bg-surface-hover)',
-                    color: theme === 'dark' ? 'var(--primary-text)' : 'var(--text-secondary)',
-                    border: theme === 'dark' ? '1px solid var(--primary)' : '1px solid var(--border)',
-                  }}
-                >
-                  <Moon className="w-4 h-4" />
-                  Dark
-                </button>
-              </div>
-            </CardContent>
-          </Card>
+            {/* ── Scrollable content ── */}
+            <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-5">
 
-          {/* Security */}
-          <SecuritySettings />
-
-          {/* PWA Install */}
-          <PWAInstallSection />
-
-          {/* Push Notification Preferences */}
-          <NotificationPreferencesSection />
-
-          {/* MQTT Connection */}
-          <Card variant="bordered">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Wifi className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                MQTT Connection
-              </CardTitle>
-              <CardDescription>MQTT broker WebSocket URL for real-time updates</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
+              {/* ─── GENERAL ─── */}
               <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                  Broker WS URL
-                </label>
-                <div
-                  className="px-3 py-2 rounded-xl text-[13px] font-mono truncate"
-                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
-                >
-                  {mqttWsUrl}
-                </div>
-                <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                  Configured via environment variables. Update <code className="px-1 py-0.5 rounded" style={{ background: 'var(--bg-surface-hover)' }}>NEXT_PUBLIC_MQTT_WS_URL</code> in <code className="px-1 py-0.5 rounded" style={{ background: 'var(--bg-surface-hover)' }}>.env</code> to change.
-                </p>
-              </div>
-              <Button onClick={handleTestConnection} variant="secondary" disabled={isTesting} size="sm">
-                {isTesting ? 'Testing...' : 'Test Connection'}
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* System Control */}
-          <Card variant="bordered">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Power className="w-4 h-4" style={{ color: 'var(--danger)' }} />
-                System Control
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div
-                className="flex items-center justify-between p-3 rounded-xl"
-                style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}
-              >
-                <div>
-                  <p className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Test Buzzer</p>
-                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Play a test sound on ESP32</p>
-                </div>
-                <Button onClick={handleTestBuzzer} isLoading={isTesting} variant="secondary" size="sm">
-                  <Volume2 className="w-3.5 h-3.5 mr-1.5" />
-                  Test
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* ESP32 Clock */}
-          <Card variant="bordered">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Clock className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                ESP32 Clock
-              </CardTitle>
-              <CardDescription>Real-time clock from ESP32 via NTP</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {espTime ? (
-                <>
-                  <div className="p-3 rounded-xl" style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>ESP32 Time</span>
-                      <div
-                        className="px-2 py-0.5 rounded-full text-[10px] font-medium"
-                        style={{
-                          background: espTime.ntpSynced ? 'var(--success-light)' : 'color-mix(in srgb, var(--warning) 15%, transparent)',
-                          color: espTime.ntpSynced ? 'var(--success-text)' : 'var(--warning)',
-                        }}
-                      >
-                        {espTime.ntpSynced ? 'NTP Synced' : 'Not Synced'}
-                      </div>
+                <SectionLabel>General</SectionLabel>
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                  <div
+                    className="flex items-center gap-3 px-3 py-2.5"
+                    style={{ background: 'var(--bg-surface)' }}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: 'var(--primary-light)' }}
+                    >
+                      {theme === 'dark'
+                        ? <Moon className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+                        : <Sun className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+                      }
                     </div>
-                    <p className="text-2xl font-bold font-mono tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                      {espTime.time}
-                    </p>
-                    <p className="text-[12px] font-mono mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                      {espTime.date}
-                    </p>
+                    <p className="flex-1 text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Appearance</p>
+                    <div
+                      className="flex rounded-lg overflow-hidden"
+                      style={{ border: '1px solid var(--border)' }}
+                    >
+                      {(['light', 'dark'] as const).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setTheme(t)}
+                          className="px-3 py-1.5 text-[11px] font-semibold transition-all flex items-center gap-1.5"
+                          style={{
+                            background: theme === t ? 'var(--primary)' : 'var(--bg-surface)',
+                            color: theme === t ? 'var(--primary-text)' : 'var(--text-muted)',
+                          }}
+                        >
+                          {t === 'light' ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
+                          {t.charAt(0).toUpperCase() + t.slice(1)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-
-                  {/* Comparison with browser time */}
-                  {(() => {
-                    const browserHour = new Date().getHours();
-                    const rawDiff = Math.abs(browserHour - espTime.hour);
-                    const hourDiff = Math.min(rawDiff, 24 - rawDiff); // Handle 24h circular wrapping
-                    const isTimeMismatch = hourDiff >= 2; // Only warn if >=2h difference
-                    if (!isTimeMismatch) return null;
-                    return (
-                      <div className="flex items-start gap-2 p-2.5 rounded-xl text-[11px]"
-                        style={{ background: 'color-mix(in srgb, var(--warning) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 25%, transparent)' }}>
-                        <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
-                        <span style={{ color: 'var(--warning)' }}>
-                          ESP32 time differs from your browser by ~{hourDiff}h. Schedules use ESP32 time.
-                        </span>
-                      </div>
-                    );
-                  })()}
-
-                  <Button onClick={handleSyncTime} isLoading={isSyncing} variant="secondary" size="sm" className="w-full">
-                    <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                    Sync NTP Time
-                  </Button>
-                </>
-              ) : clockLoading ? (
-                <div className="flex items-center justify-center py-4">
-                  <div className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin"
-                    style={{ borderColor: 'var(--border-strong)', borderTopColor: 'transparent' }} />
                 </div>
-              ) : (
-                <div className="text-center py-4">
-                  <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>Unable to fetch ESP32 time</p>
-                  <Button onClick={() => { setClockLoading(true); fetchEspTime(); }} variant="secondary" size="sm" className="mt-2">
-                    Retry
-                  </Button>
+              </div>
+
+              {/* ─── SECURITY ─── */}
+              <div>
+                <SectionLabel>Security</SectionLabel>
+                <SecuritySettings />
+              </div>
+
+              {/* ─── NOTIFICATIONS ─── */}
+              <div>
+                <SectionLabel>Notifications</SectionLabel>
+                <div className="space-y-2">
+                  <PWAInstallSection />
+                  <NotificationPreferencesSection />
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </div>
 
-          {/* System Event Log */}
-          <Card variant="bordered">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Terminal className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                System Event Log
-              </CardTitle>
-              <CardDescription>Recent system events stored in database</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div
-                ref={eventLogRef}
-                className="h-48 overflow-y-auto overflow-x-hidden rounded-xl p-3 font-mono text-[11px] leading-relaxed space-y-0.5"
-                style={{
-                  background: '#0d1117',
-                  border: '1px solid var(--border)',
-                  color: '#8b949e',
-                }}
-              >
-                {eventsLoading ? (
-                  <div className="flex items-center justify-center h-full">
-                    <span style={{ color: '#58a6ff' }}>Loading events...</span>
-                  </div>
-                ) : events.length === 0 ? (
-                  <div className="flex items-center justify-center h-full">
-                    <span style={{ color: '#484f58' }}>No events recorded</span>
-                  </div>
-                ) : (
-                  events.map((evt) => {
-                    const ts = new Date(evt.createdAt);
-                    const timeStr = ts.toLocaleTimeString('en-US', { hour12: false });
-                    const dateStr = ts.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
-                    const typeColor = evt.eventType.includes('error') || evt.eventType.includes('denied')
-                      ? '#f85149'
-                      : evt.eventType.includes('unlock') || evt.eventType.includes('granted') || evt.eventType.includes('success')
-                      ? '#3fb950'
-                      : evt.eventType.includes('warn')
-                      ? '#d29922'
-                      : '#58a6ff';
-                    return (
-                      <div key={evt.id} className="flex gap-2 whitespace-nowrap">
-                        <span style={{ color: '#484f58' }}>{dateStr} {timeStr}</span>
-                        <span style={{ color: typeColor }}>[{evt.eventType}]</span>
-                        <span className="truncate" style={{ color: '#c9d1d9' }}>{evt.description || '—'}</span>
+              {/* ─── DEVICE ─── */}
+              <div>
+                <SectionLabel>Device</SectionLabel>
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                  {/* ESP32 Clock */}
+                  <div
+                    className="px-3 py-2.5 flex items-center gap-3"
+                    style={{ background: 'var(--bg-surface)' }}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: 'color-mix(in srgb, var(--info) 12%, transparent)' }}
+                    >
+                      <Clock className="w-4 h-4" style={{ color: 'var(--info)' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>ESP32 Clock</p>
+                        {espTime && (
+                          <span
+                            className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+                            style={{
+                              background: espTime.ntpSynced ? 'var(--success-light)' : 'var(--warning-light)',
+                              color: espTime.ntpSynced ? 'var(--success-text)' : 'var(--warning-text)',
+                            }}
+                          >
+                            {espTime.ntpSynced ? 'NTP' : 'No NTP'}
+                          </span>
+                        )}
                       </div>
-                    );
-                  })
-                )}
-              </div>
-              <div className="flex gap-2 mt-2">
-                <Button onClick={fetchEvents} variant="secondary" size="sm" className="flex-1 text-xs">
-                  <RefreshCw className="w-3 h-3 mr-1" /> Refresh
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                      <p className="text-[11px] font-mono tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                        {espTime ? `${espTime.time} · ${espTime.date}` : 'Loading...'}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={handleSyncTime}
+                      isLoading={isSyncing}
+                      variant="secondary"
+                      size="sm"
+                      className="text-[11px] !px-2.5 !py-1.5"
+                    >
+                      <RefreshCw className={`w-3 h-3 mr-1 ${isSyncing ? 'animate-spin' : ''}`} />
+                      Sync
+                    </Button>
+                  </div>
 
-        </div>
+                  <div style={{ height: 1, background: 'var(--border)' }} />
+
+                  {/* MQTT */}
+                  <div
+                    className="px-3 py-2.5 flex items-center gap-3"
+                    style={{ background: 'var(--bg-surface)' }}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: 'color-mix(in srgb, var(--secondary, var(--primary)) 12%, transparent)' }}
+                    >
+                      <Wifi className="w-4 h-4" style={{ color: 'var(--secondary, var(--primary))' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>MQTT</p>
+                      <p className="text-[10px] font-mono truncate" style={{ color: 'var(--text-muted)' }}>{mqttWsUrl}</p>
+                    </div>
+                    <Button
+                      onClick={handleTestConnection}
+                      variant="secondary"
+                      size="sm"
+                      disabled={isTesting}
+                      className="text-[11px] !px-2.5 !py-1.5"
+                    >
+                      Test
+                    </Button>
+                  </div>
+
+                  <div style={{ height: 1, background: 'var(--border)' }} />
+
+                  {/* Buzzer */}
+                  <div
+                    className="px-3 py-2.5 flex items-center gap-3"
+                    style={{ background: 'var(--bg-surface)' }}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: 'color-mix(in srgb, var(--warning) 12%, transparent)' }}
+                    >
+                      <Volume2 className="w-4 h-4" style={{ color: 'var(--warning)' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Test Buzzer</p>
+                      <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Play sound on ESP32</p>
+                    </div>
+                    <Button
+                      onClick={handleTestBuzzer}
+                      isLoading={isTesting}
+                      variant="secondary"
+                      size="sm"
+                      className="text-[11px] !px-2.5 !py-1.5"
+                    >
+                      <Volume2 className="w-3 h-3 mr-1" />
+                      Play
+                    </Button>
+                  </div>
+
+                  <div style={{ height: 1, background: 'var(--border)' }} />
+
+                  {/* Restart */}
+                  <div
+                    className="px-3 py-2.5 flex items-center gap-3"
+                    style={{ background: 'var(--bg-surface)' }}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: 'var(--danger-light)' }}
+                    >
+                      <Monitor className="w-4 h-4" style={{ color: 'var(--danger)' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Restart ESP32</p>
+                      <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Device will be offline briefly</p>
+                    </div>
+                    <Button
+                      onClick={handleRestartEsp}
+                      isLoading={isRestarting}
+                      variant="secondary"
+                      size="sm"
+                      className="text-[11px] !px-2.5 !py-1.5"
+                    >
+                      Restart
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ─── SYSTEM LOG ─── */}
+              <div>
+                <SectionLabel>System Log</SectionLabel>
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                  <button
+                    onClick={() => setShowEventLog(p => !p)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors"
+                    style={{ background: 'var(--bg-surface)' }}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: 'color-mix(in srgb, var(--text-muted) 12%, transparent)' }}
+                    >
+                      <Terminal className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Event Log</p>
+                      <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        {events.length} events recorded
+                      </p>
+                    </div>
+                    <ChevronRight
+                      className="w-3.5 h-3.5 transition-transform"
+                      style={{ color: 'var(--text-muted)', transform: showEventLog ? 'rotate(90deg)' : 'rotate(0)' }}
+                    />
+                  </button>
+
+                  <AnimatePresence>
+                    {showEventLog && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div style={{ borderTop: '1px solid var(--border)' }}>
+                          <div
+                            className="h-40 overflow-y-auto overflow-x-hidden p-3 font-mono text-[10px] leading-relaxed space-y-0.5"
+                            style={{ background: '#0d1117', color: '#8b949e' }}
+                          >
+                            {eventsLoading ? (
+                              <div className="flex items-center justify-center h-full">
+                                <span style={{ color: '#58a6ff' }}>Loading...</span>
+                              </div>
+                            ) : events.length === 0 ? (
+                              <div className="flex items-center justify-center h-full">
+                                <span style={{ color: '#484f58' }}>No events</span>
+                              </div>
+                            ) : (
+                              events.map((evt) => {
+                                const ts = new Date(evt.createdAt);
+                                const timeStr = ts.toLocaleTimeString('en-US', { hour12: false });
+                                const dateStr = ts.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+                                const typeColor = evt.eventType.includes('error') || evt.eventType.includes('denied')
+                                  ? '#f85149'
+                                  : evt.eventType.includes('unlock') || evt.eventType.includes('granted') || evt.eventType.includes('success')
+                                    ? '#3fb950'
+                                    : evt.eventType.includes('warn')
+                                      ? '#d29922'
+                                      : '#58a6ff';
+                                return (
+                                  <div key={evt.id} className="flex gap-2 whitespace-nowrap">
+                                    <span style={{ color: '#484f58' }}>{dateStr} {timeStr}</span>
+                                    <span style={{ color: typeColor }}>[{evt.eventType}]</span>
+                                    <span className="truncate" style={{ color: '#c9d1d9' }}>{evt.description || '—'}</span>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                          <div className="px-3 py-2" style={{ borderTop: '1px solid #21262d' }}>
+                            <button
+                              onClick={fetchEvents}
+                              className="flex items-center gap-1.5 text-[10px] font-medium"
+                              style={{ color: '#58a6ff' }}
+                            >
+                              <RefreshCw className="w-3 h-3" /> Refresh
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+
+            </div>
           </motion.div>
         </motion.div>
       )}
