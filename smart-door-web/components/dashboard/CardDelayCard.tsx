@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Hourglass, Save, CreditCard, Maximize2, X, Clock, Users, RefreshCw, Wifi, WifiOff, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Hourglass, Save, CreditCard, Maximize2, X, Clock, RefreshCw, WifiOff, ChevronLeft, ChevronRight, Plus, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
 import { Card as CardType, CardDelayConfig, CardDelayScheduleConfig, DoorStatus } from '@/lib/types';
 import { api } from '@/lib/api';
 import { formatUid } from '@/lib/utils';
@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
 const VISIBLE_COUNT = 1;
+const MAX_SCHEDULES = 5;
 
 interface CardDelayCardProps {
   status?: DoorStatus | null;
@@ -21,12 +22,12 @@ interface CardDelayCardProps {
 export function CardDelayCard({ status }: CardDelayCardProps) {
   const [cards, setCards] = useState<CardType[]>([]);
   const [delays, setDelays] = useState<Record<string, number>>({});
+  const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [schedules, setSchedules] = useState<CardDelayScheduleConfig[]>([]);
   const [savingUid, setSavingUid] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showScheduleFor, setShowScheduleFor] = useState<string | null>(null);
-  const [showBulkSchedule, setShowBulkSchedule] = useState(false);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
 
   // Schedule form state
@@ -37,27 +38,22 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
   const [syncing, setSyncing] = useState(false);
   const [espNtpSynced, setEspNtpSynced] = useState<boolean | null>(null);
 
-  // Use ESP32 time from status; fall back to browser time if unavailable
   const currentHour = status?.currentHour ?? new Date().getHours();
   const ntpSynced = status?.ntpSynced ?? null;
 
-  // Update espNtpSynced from status
   useEffect(() => {
     if (ntpSynced !== null) setEspNtpSynced(ntpSynced);
   }, [ntpSynced]);
 
-  // Check if a schedule is currently active
   const isScheduleActive = useCallback((startHour: number, endHour: number) => {
     if (startHour <= endHour) {
       return currentHour >= startHour && currentHour < endHour;
-    } else {
-      // Wrapping: e.g. 22:00-08:00
-      return currentHour >= startHour || currentHour < endHour;
     }
+    return currentHour >= startHour || currentHour < endHour;
   }, [currentHour]);
 
-  // Get effective delay for a card (schedule overrides static)
   const getEffectiveDelay = useCallback((uid: string): { delay: number; isScheduled: boolean; schedule?: CardDelayScheduleConfig } => {
+    if (enabled[uid] === false) return { delay: 0, isScheduled: false };
     const cardSchedules = schedules.filter((s) => s.cardUid === uid);
     for (const sched of cardSchedules) {
       if (isScheduleActive(sched.startHour, sched.endHour)) {
@@ -65,16 +61,10 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
       }
     }
     return { delay: delays[uid] ?? 0, isScheduled: false };
-  }, [schedules, delays, isScheduleActive]);
+  }, [schedules, delays, enabled, isScheduleActive]);
 
-  // Check if any schedule is currently active
-  const activeScheduleInfo = useMemo(() => {
-    for (const sched of schedules) {
-      if (isScheduleActive(sched.startHour, sched.endHour)) {
-        return sched;
-      }
-    }
-    return null;
+  const activeScheduleCount = useMemo(() => {
+    return schedules.filter((s) => isScheduleActive(s.startHour, s.endHour)).length;
   }, [schedules, isScheduleActive]);
 
   const loadData = useCallback(async () => {
@@ -92,10 +82,13 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
       if (configRes.ok) {
         const configData = await configRes.json();
         const delayMap: Record<string, number> = {};
+        const enabledMap: Record<string, boolean> = {};
         (configData.cardDelays || []).forEach((d: CardDelayConfig) => {
           delayMap[d.cardUid] = d.delaySec;
+          enabledMap[d.cardUid] = d.enabled;
         });
         setDelays(delayMap);
+        setEnabled(enabledMap);
         setSchedules(configData.cardSchedules || []);
       }
     } catch {
@@ -115,7 +108,6 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
     return () => { u1(); u2(); };
   }, [loadData]);
 
-  // Keep currentCardIndex within bounds
   useEffect(() => {
     if (cards.length > 0 && currentCardIndex >= cards.length) {
       setCurrentCardIndex(Math.max(0, cards.length - 1));
@@ -157,7 +149,65 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
     }
   };
 
-  const handleSaveSchedule = async (uid: string) => {
+  const handleToggleEnabled = async (uid: string) => {
+    const newEnabled = !(enabled[uid] ?? true);
+    setEnabled((prev) => ({ ...prev, [uid]: newEnabled }));
+    try {
+      await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enableDelay: { cardUid: uid, enabled: newEnabled } }),
+      });
+      try {
+        await api.setCardDelayEnabled(uid, newEnabled);
+      } catch { /* ESP32 offline */ }
+      toast.success(newEnabled ? 'Delay enabled' : 'Delay disabled');
+      logSystemEvent('card_delay_toggle', `Card ${uid} delay ${newEnabled ? 'enabled' : 'disabled'}`);
+    } catch {
+      setEnabled((prev) => ({ ...prev, [uid]: !newEnabled }));
+      toast.error('Failed to toggle delay');
+    }
+  };
+
+  const handleBulkToggle = async (newEnabled: boolean) => {
+    const allUids = cards.map((c) => c.uid);
+    const prevEnabled = { ...enabled };
+    const newEnabledMap: Record<string, boolean> = {};
+    allUids.forEach((uid) => { newEnabledMap[uid] = newEnabled; });
+    setEnabled(newEnabledMap);
+    try {
+      await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bulkEnableDelay: { cardUids: allUids, enabled: newEnabled } }),
+      });
+      try {
+        await api.bulkSetCardDelayEnabled(allUids.map((uid) => ({ uid, enabled: newEnabled })));
+      } catch { /* ESP32 offline */ }
+      toast.success(`All delays ${newEnabled ? 'enabled' : 'disabled'}`);
+    } catch {
+      setEnabled(prevEnabled);
+      toast.error('Failed to toggle delays');
+    }
+  };
+
+  const getCardSchedules = (uid: string) => schedules.filter((s) => s.cardUid === uid);
+
+  const getNextFreeSlot = (uid: string): number | null => {
+    const used = new Set(getCardSchedules(uid).map((s) => s.slot ?? 0));
+    for (let i = 0; i < MAX_SCHEDULES; i++) {
+      if (!used.has(i)) return i;
+    }
+    return null;
+  };
+
+  const handleAddSchedule = async (uid: string) => {
+    const slot = getNextFreeSlot(uid);
+    if (slot === null) {
+      toast.error(`Max ${MAX_SCHEDULES} schedules per card`);
+      return;
+    }
+
     setSavingSchedule(true);
     try {
       const dbRes = await fetch('/api/config', {
@@ -172,9 +222,9 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
       setSchedules(updatedConfig.cardSchedules || []);
 
       try {
-        await api.pushCardSchedule(uid, schedStartHour, schedEndHour, schedDelaySec);
-        toast.success(`Schedule: ${schedStartHour}:00-${schedEndHour}:00 → ${schedDelaySec}s`);
-        logSystemEvent('card_schedule_changed', `Card ${uid} schedule: ${schedStartHour}:00-${schedEndHour}:00 → ${schedDelaySec}s`);
+        await api.pushCardSchedule(uid, slot, schedStartHour, schedEndHour, schedDelaySec);
+        toast.success(`Schedule: ${schedStartHour.toString().padStart(2, '0')}:00-${schedEndHour.toString().padStart(2, '0')}:00 → ${schedDelaySec}s`);
+        logSystemEvent('card_schedule_changed', `Card ${uid} schedule[${slot}]: ${schedStartHour}:00-${schedEndHour}:00 → ${schedDelaySec}s`);
       } catch {
         toast.success('Schedule saved to DB', { icon: '⚠️' });
         toast('ESP32 push failed — will apply on next sync', { icon: '📡', duration: 4000 });
@@ -186,7 +236,7 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
     }
   };
 
-  const handleRemoveSchedule = async (uid: string, startHour: number, endHour: number) => {
+  const handleRemoveSchedule = async (uid: string, startHour: number, endHour: number, slot?: number) => {
     try {
       const dbRes = await fetch('/api/config', {
         method: 'PUT',
@@ -197,7 +247,7 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
         const updatedConfig = await dbRes.json();
         setSchedules(updatedConfig.cardSchedules || []);
       }
-      try { await api.removeCardSchedule(uid); } catch { /* ESP32 offline */ }
+      try { await api.removeCardSchedule(uid, slot ?? 0); } catch { /* ESP32 offline */ }
       toast.success('Schedule removed');
       logSystemEvent('card_schedule_removed', `Card ${uid} schedule removed`);
     } catch {
@@ -205,7 +255,7 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
     }
   };
 
-  const handleBulkSchedule = async () => {
+  const handleBulkAddSchedule = async () => {
     setSavingSchedule(true);
     try {
       const allUids = cards.map((c) => c.uid);
@@ -221,16 +271,16 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
       setSchedules(updatedConfig.cardSchedules || []);
 
       try {
-        const bulkData = allUids.map((uid) => ({
-          uid, startHour: schedStartHour, endHour: schedEndHour, delaySec: schedDelaySec,
-        }));
+        const bulkData = allUids.map((uid) => {
+          const slot = getNextFreeSlot(uid) ?? 0;
+          return { uid, slot, startHour: schedStartHour, endHour: schedEndHour, delaySec: schedDelaySec };
+        });
         await api.pushBulkCardSchedules(bulkData);
-        toast.success(`Schedule ${schedStartHour.toString().padStart(2, '0')}:00-${schedEndHour.toString().padStart(2, '0')}:00 → ${schedDelaySec}s applied to ${allUids.length} cards`);
+        toast.success(`Schedule applied to ${allUids.length} cards`);
       } catch {
         toast.success('Saved to DB', { icon: '⚠️' });
         toast('ESP32 push failed', { icon: '📡', duration: 4000 });
       }
-      // Don't close — allow adding more schedules
     } catch {
       toast.error('Failed to apply bulk schedule');
     } finally {
@@ -238,49 +288,61 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
     }
   };
 
-  const handleBulkRemoveSchedules = async () => {
-    setSavingSchedule(true);
+  const [clearing, setClearing] = useState(false);
+
+  const handleClearAll = async () => {
+    if (!confirm('Clear all card delays, schedules, and enabled states?')) return;
+    setClearing(true);
     try {
       const allUids = cards.map((c) => c.uid);
-      // Remove from DB for each card
+      // Clear DB: delays + schedules for each card
       for (const uid of allUids) {
         await fetch('/api/config', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ removeSchedule: { cardUid: uid, all: true } }),
+          body: JSON.stringify({
+            cardDelay: { cardUid: uid, delaySec: 0 },
+            removeSchedule: { cardUid: uid, all: true },
+            enableDelay: { cardUid: uid, enabled: true },
+          }),
         });
       }
+      // Reset local state
+      const newDelays: Record<string, number> = {};
+      const newEnabled: Record<string, boolean> = {};
+      allUids.forEach((uid) => { newDelays[uid] = 0; newEnabled[uid] = true; });
+      setDelays(newDelays);
+      setEnabled(newEnabled);
       setSchedules([]);
 
-      // Remove from ESP32
+      // Clear ESP32
       try {
-        const bulkData = allUids.map((uid) => ({ uid, remove: true, startHour: 0, endHour: 0, delaySec: 0 }));
-        await api.pushBulkCardSchedules(bulkData);
-        toast.success(`All schedules removed from ${allUids.length} cards`);
+        for (const uid of allUids) {
+          await api.pushCardDelay(uid, 0);
+          await api.removeAllCardSchedules(uid);
+        }
+        await api.bulkSetCardDelayEnabled(allUids.map((uid) => ({ uid, enabled: true })));
+        toast.success('All delays cleared');
       } catch {
-        toast.success('Removed from DB', { icon: '⚠️' });
-        toast('ESP32 push failed', { icon: '📡', duration: 4000 });
+        toast.success('DB cleared', { icon: '⚠️' });
+        toast('ESP32 push failed — sync later', { icon: '📡', duration: 4000 });
       }
-      setShowBulkSchedule(false);
+      logSystemEvent('card_delay_clear_all', `All card delays cleared for ${allUids.length} cards`);
     } catch {
-      toast.error('Failed to remove schedules');
+      toast.error('Failed to clear delays');
     } finally {
-      setSavingSchedule(false);
+      setClearing(false);
     }
   };
 
-  const getCardSchedules = (uid: string) => schedules.filter((s) => s.cardUid === uid);
-
-  // Sync all DB schedules to ESP32
   const handleSyncToEsp = async () => {
     setSyncing(true);
     try {
-      // First check ESP32 status
       try {
         const espData = await api.getEspSchedules();
         setEspNtpSynced(espData.ntpSynced);
         if (!espData.ntpSynced) {
-          toast('ESP32 NTP belum sync — schedule akan aktif setelah waktu tersinkron', { icon: '⏳', duration: 4000 });
+          toast('ESP32 NTP belum sync — schedule aktif setelah waktu tersinkron', { icon: '⏳', duration: 4000 });
         }
       } catch {
         toast.error('Cannot reach ESP32');
@@ -288,35 +350,30 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
         return;
       }
 
-      // Push all schedules from DB to ESP32
+      // Push enabled states
+      const enabledCards = cards.map((c) => ({ uid: c.uid, enabled: enabled[c.uid] ?? true }));
+      try { await api.bulkSetCardDelayEnabled(enabledCards); } catch { /* best effort */ }
+
+      // Push all schedules
       if (schedules.length > 0) {
-        const bulkData = schedules.map((s) => ({
-          uid: s.cardUid,
-          startHour: s.startHour,
-          endHour: s.endHour,
-          delaySec: s.delaySec,
-        }));
+        // Assign slots per card
+        const slotMap: Record<string, number> = {};
+        const bulkData = schedules.map((s) => {
+          const slot = slotMap[s.cardUid] ?? 0;
+          slotMap[s.cardUid] = slot + 1;
+          return { uid: s.cardUid, slot, startHour: s.startHour, endHour: s.endHour, delaySec: s.delaySec };
+        });
         await api.pushBulkCardSchedules(bulkData);
-        toast.success(`${schedules.length} schedule(s) synced to ESP32${espNtpSynced === false ? ' (NTP pending)' : ''}`);
+        toast.success(`${schedules.length} schedule(s) synced to ESP32`);
       } else {
-        // Remove all schedules from ESP32
         const allUids = cards.map((c) => c.uid);
         if (allUids.length > 0) {
-          const bulkData = allUids.map((uid) => ({ uid, remove: true, startHour: 0, endHour: 0, delaySec: 0 }));
-          await api.pushBulkCardSchedules(bulkData);
+          for (const uid of allUids) {
+            try { await api.removeAllCardSchedules(uid); } catch { /* best effort */ }
+          }
         }
         toast.success('ESP32 schedules cleared');
       }
-
-      // Verify by reading back
-      try {
-        const verify = await api.getEspSchedules();
-        const espCount = verify.schedules.length;
-        const dbCount = schedules.length;
-        if (espCount !== dbCount) {
-          toast(`ESP32 has ${espCount}/${dbCount} schedules`, { icon: '⚠️', duration: 4000 });
-        }
-      } catch { /* verification optional */ }
     } catch {
       toast.error('Sync failed — ESP32 may be offline');
     } finally {
@@ -324,14 +381,84 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
     }
   };
 
+  // ── Schedule Form (reusable) ──
+  const renderScheduleForm = (onSave: () => void, label: string) => (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>From</label>
+          <select value={schedStartHour} onChange={(e) => setSchedStartHour(parseInt(e.target.value))}
+            className="w-full px-2 py-1 rounded-md text-xs"
+            style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+          >
+            {Array.from({ length: 24 }, (_, i) => (<option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>))}
+          </select>
+        </div>
+        <div className="flex-1">
+          <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>To</label>
+          <select value={schedEndHour} onChange={(e) => setSchedEndHour(parseInt(e.target.value))}
+            className="w-full px-2 py-1 rounded-md text-xs"
+            style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+          >
+            {Array.from({ length: 24 }, (_, i) => (<option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>))}
+          </select>
+        </div>
+        <div className="flex-1">
+          <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Delay</label>
+          <select value={schedDelaySec} onChange={(e) => setSchedDelaySec(parseInt(e.target.value))}
+            className="w-full px-2 py-1 rounded-md text-xs"
+            style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+          >
+            {[1, 2, 3, 5, 7, 10, 15, 20, 30].map((s) => (<option key={s} value={s}>{s}s</option>))}
+          </select>
+        </div>
+      </div>
+      <Button onClick={onSave} isLoading={savingSchedule} variant="primary" size="sm" className="w-full text-xs">
+        <Plus className="w-3 h-3 mr-1" /> {label}
+      </Button>
+    </div>
+  );
+
+  // ── Schedule List ──
+  const renderScheduleList = (uid: string) => {
+    const cardScheds = getCardSchedules(uid);
+    if (cardScheds.length === 0) return null;
+    return (
+      <div className="flex flex-wrap gap-1">
+        {cardScheds.map((s, i) => (
+          <div key={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] group"
+            style={{
+              background: isScheduleActive(s.startHour, s.endHour)
+                ? 'color-mix(in srgb, var(--primary) 25%, transparent)'
+                : 'color-mix(in srgb, var(--primary) 12%, transparent)',
+              color: 'var(--primary)',
+              fontWeight: isScheduleActive(s.startHour, s.endHour) ? 600 : 400,
+            }}
+          >
+            <Clock className="w-2.5 h-2.5" />
+            {s.startHour.toString().padStart(2, '0')}:00-{s.endHour.toString().padStart(2, '0')}:00 → {s.delaySec}s
+            <button onClick={() => handleRemoveSchedule(uid, s.startHour, s.endHour, s.slot)}
+              className="ml-0.5 opacity-50 hover:opacity-100 transition-opacity"
+              title="Remove schedule"
+            >
+              <X className="w-2.5 h-2.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // ── Per-Card Render ──
   const renderCardItem = (card: CardType, index: number) => {
     const uid = card.uid;
     const staticDelay = delays[uid] ?? 0;
-    const { delay: effectiveDelay, isScheduled, schedule: activeSchedule } = getEffectiveDelay(uid);
+    const isEnabled = enabled[uid] ?? true;
+    const { delay: effectiveDelay, isScheduled } = getEffectiveDelay(uid);
     const isSavingThis = savingUid === uid;
-    const cardSchedules = getCardSchedules(uid);
+    const cardScheds = getCardSchedules(uid);
     const isScheduleOpen = showScheduleFor === uid;
-    const hasBulkSchedule = cardSchedules.length > 0;
+    const canAddSchedule = cardScheds.length < MAX_SCHEDULES;
 
     return (
       <motion.div
@@ -343,13 +470,14 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
         className="p-3 rounded-xl"
         style={{
           background: 'var(--bg-surface-hover)',
-          border: hasBulkSchedule ? '1.5px solid var(--primary)' : '1px solid var(--border)',
+          border: isEnabled ? '1px solid var(--border)' : '1px dashed var(--border)',
+          opacity: isEnabled ? 1 : 0.6,
         }}
       >
         {/* Card header */}
-        <div className="flex items-center gap-3 mb-2.5">
+        <div className="flex items-center gap-3 mb-2">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--primary-light)' }}>
-            {hasBulkSchedule ? <Clock className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} /> : <CreditCard className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />}
+            <CreditCard className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
@@ -359,85 +487,39 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
               {formatUid(uid)}
             </p>
           </div>
-          <div className="flex flex-col items-end gap-0.5">
+          <div className="flex items-center gap-2">
             <div
               className="px-2.5 py-1 rounded-full text-[11px] font-semibold tabular-nums shrink-0"
               style={{
-                background: hasBulkSchedule
-                  ? 'color-mix(in srgb, var(--primary) 15%, transparent)'
+                background: !isEnabled
+                  ? 'var(--bg-surface)'
+                  : isScheduled ? 'color-mix(in srgb, var(--primary) 15%, transparent)'
                   : effectiveDelay > 0 ? 'color-mix(in srgb, var(--warning) 15%, transparent)' : 'var(--success-light)',
-                color: hasBulkSchedule ? 'var(--primary)' : effectiveDelay > 0 ? 'var(--warning)' : 'var(--success-text)',
+                color: !isEnabled
+                  ? 'var(--text-muted)'
+                  : isScheduled ? 'var(--primary)' : effectiveDelay > 0 ? 'var(--warning)' : 'var(--success-text)',
               }}
             >
-              {hasBulkSchedule ? 'Bulk' : effectiveDelay === 0 ? 'Instant' : `${effectiveDelay}s`}
+              {!isEnabled ? 'Off' : effectiveDelay === 0 ? 'Instant' : `${effectiveDelay}s`}
             </div>
+            <button onClick={() => handleToggleEnabled(uid)} className="p-0.5 transition-colors" title={isEnabled ? 'Disable delay' : 'Enable delay'}>
+              {isEnabled
+                ? <ToggleRight className="w-5 h-5" style={{ color: 'var(--primary)' }} />
+                : <ToggleLeft className="w-5 h-5" style={{ color: 'var(--text-muted)' }} />
+              }
+            </button>
           </div>
         </div>
 
-        {hasBulkSchedule ? (
-          /* ── Bulk schedule mode: block content, show schedule info + cancel ── */
-          <div className="rounded-lg p-2.5 space-y-2" style={{ background: 'color-mix(in srgb, var(--primary) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--primary) 20%, transparent)' }}>
-            {isScheduled && activeSchedule && (
-              <div className="flex items-center gap-1.5 text-[10px] font-medium" style={{ color: 'var(--primary)' }}>
-                <Wifi className="w-3 h-3 shrink-0" />
-                <span>Active now → {activeSchedule.delaySec}s delay</span>
-              </div>
-            )}
-            <div className="flex flex-wrap gap-1">
-              {cardSchedules.map((s, i) => (
-                <div key={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px]"
-                  style={{
-                    background: isScheduleActive(s.startHour, s.endHour)
-                      ? 'color-mix(in srgb, var(--primary) 25%, transparent)'
-                      : 'color-mix(in srgb, var(--primary) 12%, transparent)',
-                    color: 'var(--primary)',
-                    fontWeight: isScheduleActive(s.startHour, s.endHour) ? 600 : 400,
-                  }}
-                >
-                  <Clock className="w-2.5 h-2.5" />
-                  {s.startHour.toString().padStart(2, '0')}:00-{s.endHour.toString().padStart(2, '0')}:00 → {s.delaySec}s
-                </div>
-              ))}
-            </div>
-            <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-              Base delay: {staticDelay === 0 ? 'instant' : `${staticDelay}s`} (outside schedule)
-            </p>
-            <button
-              onClick={async () => {
-                try {
-                  const dbRes = await fetch('/api/config', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ removeSchedule: { cardUid: uid, all: true } }),
-                  });
-                  if (dbRes.ok) {
-                    const updatedConfig = await dbRes.json();
-                    setSchedules(updatedConfig.cardSchedules || []);
-                  }
-                  try { await api.removeCardSchedule(uid); } catch { /* ESP32 offline */ }
-                  toast.success(`${card.nickname || 'Card'} set to individual delay`);
-                  logSystemEvent('card_schedule_custom', `Card ${uid} opted out of bulk schedule`);
-                } catch {
-                  toast.error('Failed to remove schedule');
-                }
-              }}
-              className="w-full py-1.5 rounded-lg text-[11px] font-semibold transition-colors flex items-center justify-center gap-1.5"
-              style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
-            >
-              <X className="w-3 h-3" /> Cancel Bulk — Use Individual Delay
-            </button>
-          </div>
-        ) : (
-          /* ── Individual delay mode: slider + save + schedule button ── */
+        {isEnabled && (
           <>
+            {/* Static delay slider */}
             <div className="flex items-center gap-2">
               <span className="text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>0s</span>
               <input type="range" min={0} max={30} value={staticDelay}
                 onChange={(e) => handleDelayChange(uid, parseInt(e.target.value))}
                 className="flex-1 min-w-0"
-                style={{
-                  accentColor: staticDelay > 0 ? 'var(--warning)' : 'var(--primary)',
-                }}
+                style={{ accentColor: staticDelay > 0 ? 'var(--warning)' : 'var(--primary)' }}
               />
               <span className="text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>30s</span>
             </div>
@@ -446,66 +528,46 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
               <Button onClick={() => handleSave(uid)} isLoading={isSavingThis} variant="primary" size="sm" className="flex-1 text-xs">
                 <Save className="w-3 h-3 mr-1" /> Save
               </Button>
-              <button
-                onClick={() => {
-                  if (!isFullscreen) {
-                    setShowScheduleFor(uid);
-                    setIsFullscreen(true);
-                  } else {
-                    setShowScheduleFor(isScheduleOpen ? null : uid);
-                  }
-                }}
-                className="p-1.5 rounded-lg transition-colors"
-                style={{
-                  background: isScheduleOpen ? 'var(--primary-light)' : 'var(--bg-surface)',
-                  color: isScheduleOpen ? 'var(--primary)' : 'var(--text-muted)',
-                  border: '1px solid var(--border)',
-                }}
-                title="Time-based schedule"
-              >
-                <Clock className="w-3.5 h-3.5" />
-              </button>
+              {canAddSchedule && (
+                <button
+                  onClick={() => {
+                    if (!isFullscreen) { setShowScheduleFor(uid); setIsFullscreen(true); }
+                    else { setShowScheduleFor(isScheduleOpen ? null : uid); }
+                  }}
+                  className="p-1.5 rounded-lg transition-colors"
+                  style={{
+                    background: isScheduleOpen ? 'var(--primary-light)' : 'var(--bg-surface)',
+                    color: isScheduleOpen ? 'var(--primary)' : 'var(--text-muted)',
+                    border: '1px solid var(--border)',
+                  }}
+                  title="Add time-based schedule"
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
+            {/* Existing schedules */}
+            {cardScheds.length > 0 && (
+              <div className="mt-2">
+                {renderScheduleList(uid)}
+                <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  Base delay: {staticDelay === 0 ? 'instant' : `${staticDelay}s`} (outside schedules)
+                </p>
+              </div>
+            )}
+
+            {/* Schedule form */}
             <AnimatePresence>
               {isScheduleOpen && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden"
                 >
                   <div className="mt-2 p-2.5 rounded-lg space-y-2" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
-                    <p className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>Time-based delay schedule</p>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1">
-                        <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>From</label>
-                        <select value={schedStartHour} onChange={(e) => setSchedStartHour(parseInt(e.target.value))}
-                          className="w-full px-2 py-1 rounded-md text-xs"
-                          style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                        >
-                          {Array.from({ length: 24 }, (_, i) => (<option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>))}
-                        </select>
-                      </div>
-                      <div className="flex-1">
-                        <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>To</label>
-                        <select value={schedEndHour} onChange={(e) => setSchedEndHour(parseInt(e.target.value))}
-                          className="w-full px-2 py-1 rounded-md text-xs"
-                          style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                        >
-                          {Array.from({ length: 24 }, (_, i) => (<option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>))}
-                        </select>
-                      </div>
-                      <div className="flex-1">
-                        <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Delay</label>
-                        <select value={schedDelaySec} onChange={(e) => setSchedDelaySec(parseInt(e.target.value))}
-                          className="w-full px-2 py-1 rounded-md text-xs"
-                          style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                        >
-                          {[1, 2, 3, 5, 7, 10, 15, 20, 30].map((s) => (<option key={s} value={s}>{s}s</option>))}
-                        </select>
-                      </div>
-                    </div>
-                    <Button onClick={() => handleSaveSchedule(uid)} isLoading={savingSchedule} variant="primary" size="sm" className="w-full text-xs">
-                      <Clock className="w-3 h-3 mr-1" /> Save Schedule
-                    </Button>
+                    <p className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
+                      Add schedule ({cardScheds.length}/{MAX_SCHEDULES})
+                    </p>
+                    {renderScheduleForm(() => handleAddSchedule(uid), 'Add Schedule')}
                   </div>
                 </motion.div>
               )}
@@ -516,119 +578,7 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
     );
   };
 
-  const renderBulkScheduleForm = () => (
-    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-      exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden"
-    >
-      <div className="p-3 rounded-xl space-y-2.5" style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}>
-        <div className="flex items-center gap-2">
-          <Users className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />
-          <p className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Bulk Schedule — All {cards.length} Cards
-          </p>
-        </div>
-        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-          Add time-based delays to all cards. You can apply multiple schedules with different time ranges.
-        </p>
-        {activeScheduleInfo && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium"
-            style={{ background: 'color-mix(in srgb, var(--primary) 10%, transparent)', color: 'var(--primary)' }}
-          >
-            <Clock className="w-3 h-3 shrink-0" />
-            Active now: {activeScheduleInfo.startHour.toString().padStart(2, '0')}:00-{activeScheduleInfo.endHour.toString().padStart(2, '0')}:00 → {activeScheduleInfo.delaySec}s delay
-          </div>
-        )}
-        {espNtpSynced === false && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium"
-            style={{ background: 'color-mix(in srgb, var(--error) 10%, transparent)', color: 'var(--error)' }}
-          >
-            <WifiOff className="w-3 h-3 shrink-0" />
-            ESP32 NTP not synced — schedules won&apos;t activate until time is synced
-          </div>
-        )}
-        <div className="flex items-center gap-2">
-          <div className="flex-1">
-            <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>From</label>
-            <select value={schedStartHour} onChange={(e) => setSchedStartHour(parseInt(e.target.value))}
-              className="w-full px-2 py-1 rounded-md text-xs"
-              style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-            >
-              {Array.from({ length: 24 }, (_, i) => (<option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>))}
-            </select>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>To</label>
-            <select value={schedEndHour} onChange={(e) => setSchedEndHour(parseInt(e.target.value))}
-              className="w-full px-2 py-1 rounded-md text-xs"
-              style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-            >
-              {Array.from({ length: 24 }, (_, i) => (<option key={i} value={i}>{i.toString().padStart(2, '0')}:00</option>))}
-            </select>
-          </div>
-          <div className="flex-1">
-            <label className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Delay</label>
-            <select value={schedDelaySec} onChange={(e) => setSchedDelaySec(parseInt(e.target.value))}
-              className="w-full px-2 py-1 rounded-md text-xs"
-              style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-            >
-              {[1, 2, 3, 5, 7, 10, 15, 20, 30].map((s) => (<option key={s} value={s}>{s}s</option>))}
-            </select>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={handleBulkSchedule} isLoading={savingSchedule} variant="primary" size="sm" className="flex-1 text-xs">
-            <Users className="w-3 h-3 mr-1" /> Add Schedule
-          </Button>
-          <Button onClick={handleSyncToEsp} isLoading={syncing} variant="secondary" size="sm" className="text-xs"
-            title="Re-sync all schedules from database to ESP32"
-          >
-            <RefreshCw className={`w-3 h-3 mr-1 ${syncing ? 'animate-spin' : ''}`} /> Sync
-          </Button>
-          {schedules.length > 0 && (
-            <Button onClick={handleBulkRemoveSchedules} isLoading={savingSchedule} variant="secondary" size="sm" className="text-xs"
-              style={{ color: 'var(--error)', borderColor: 'var(--error)' }}
-            >
-              <X className="w-3 h-3 mr-1" /> Remove All
-            </Button>
-          )}
-          <Button onClick={() => setShowBulkSchedule(false)} variant="secondary" size="sm" className="text-xs">
-            Cancel
-          </Button>
-        </div>
-        {/* Show unique applied schedules */}
-        {(() => {
-          const uniqueSchedules = new Map<string, { startHour: number; endHour: number; delaySec: number; count: number }>();
-          schedules.forEach((s) => {
-            const key = `${s.startHour}-${s.endHour}-${s.delaySec}`;
-            const existing = uniqueSchedules.get(key);
-            if (existing) {
-              existing.count++;
-            } else {
-              uniqueSchedules.set(key, { startHour: s.startHour, endHour: s.endHour, delaySec: s.delaySec, count: 1 });
-            }
-          });
-          if (uniqueSchedules.size === 0) return null;
-          return (
-            <div className="space-y-1">
-              <p className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Applied schedules:</p>
-              <div className="flex flex-wrap gap-1">
-                {Array.from(uniqueSchedules.values()).map((s, i) => (
-                  <div key={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px]"
-                    style={{ background: 'color-mix(in srgb, var(--primary) 12%, transparent)', color: 'var(--primary)' }}
-                  >
-                    <Clock className="w-2.5 h-2.5" />
-                    {s.startHour.toString().padStart(2, '0')}:00-{s.endHour.toString().padStart(2, '0')}:00 → {s.delaySec}s
-                    <span className="text-[9px] opacity-70">({s.count}/{cards.length} cards)</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
-      </div>
-    </motion.div>
-  );
-
+  // ── Fullscreen Modal ──
   const renderFullscreen = () => (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -641,6 +591,7 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
         className="w-full max-w-3xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col my-[5vh] mx-4"
         style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}
       >
+        {/* Header */}
         <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center gap-2">
             <Hourglass className="w-4 h-4" style={{ color: 'var(--primary)' }} />
@@ -648,17 +599,34 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
               Card Unlock Delays
             </h2>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setShowBulkSchedule(!showBulkSchedule)}
-              className="p-1.5 rounded-lg transition-colors"
-              style={{
-                background: showBulkSchedule ? 'var(--primary-light)' : 'var(--bg-surface-hover)',
-                color: showBulkSchedule ? 'var(--primary)' : 'var(--text-muted)',
-                border: '1px solid var(--border)',
-              }}
-              title="Bulk schedule"
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => handleBulkToggle(true)}
+              className="px-2 py-1 rounded-lg text-[10px] font-medium transition-colors"
+              style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+              title="Enable all"
             >
-              <Users className="w-3.5 h-3.5" />
+              <ToggleRight className="w-3 h-3 inline mr-0.5" style={{ color: 'var(--primary)' }} /> All On
+            </button>
+            <button onClick={() => handleBulkToggle(false)}
+              className="px-2 py-1 rounded-lg text-[10px] font-medium transition-colors"
+              style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+              title="Disable all"
+            >
+              <ToggleLeft className="w-3 h-3 inline mr-0.5" /> All Off
+            </button>
+            <button onClick={handleSyncToEsp}
+              className="px-2 py-1 rounded-lg text-[10px] font-medium transition-colors"
+              style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+              title="Sync all to ESP32"
+            >
+              <RefreshCw className={`w-3 h-3 inline mr-0.5 ${syncing ? 'animate-spin' : ''}`} /> Sync
+            </button>
+            <button onClick={handleClearAll} disabled={clearing}
+              className="px-2 py-1 rounded-lg text-[10px] font-medium transition-colors disabled:opacity-50"
+              style={{ background: 'var(--bg-surface-hover)', color: 'var(--error)', border: '1px solid var(--border)' }}
+              title="Clear all delays and schedules"
+            >
+              <Trash2 className={`w-3 h-3 inline mr-0.5 ${clearing ? 'animate-pulse' : ''}`} /> Clear All
             </button>
             <button onClick={() => setIsFullscreen(false)} className="p-1.5 rounded-lg transition-colors"
               style={{ background: 'var(--bg-surface-hover)', color: 'var(--text-muted)' }}
@@ -667,9 +635,26 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
             </button>
           </div>
         </div>
-        <AnimatePresence>
-          {showBulkSchedule && <div className="px-4 pt-3">{renderBulkScheduleForm()}</div>}
-        </AnimatePresence>
+
+        {/* Bulk schedule form */}
+        <div className="px-4 pt-3">
+          <div className="p-3 rounded-xl space-y-2" style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}>
+            <p className="text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Bulk Schedule — All {cards.length} Cards
+            </p>
+            {espNtpSynced === false && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium"
+                style={{ background: 'color-mix(in srgb, var(--error) 10%, transparent)', color: 'var(--error)' }}
+              >
+                <WifiOff className="w-3 h-3 shrink-0" />
+                ESP32 NTP not synced — schedules won&apos;t activate until time is synced
+              </div>
+            )}
+            {renderScheduleForm(handleBulkAddSchedule, `Add to All ${cards.length} Cards`)}
+          </div>
+        </div>
+
+        {/* Card list */}
         <div className="flex-1 overflow-y-auto p-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <AnimatePresence mode="popLayout">
@@ -681,6 +666,7 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
     </motion.div>
   );
 
+  // ── Compact Card View ──
   return (
     <>
       <Card>
@@ -720,13 +706,13 @@ export function CardDelayCard({ status }: CardDelayCardProps) {
             </div>
           ) : (
             <div className="space-y-2.5">
-              {activeScheduleInfo && (
+              {activeScheduleCount > 0 && (
                 <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-[11px] font-medium"
                   style={{ background: 'color-mix(in srgb, var(--primary) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--primary) 25%, transparent)' }}
                 >
                   <Clock className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--primary)' }} />
                   <span style={{ color: 'var(--primary)' }}>
-                    Schedule active: {activeScheduleInfo.startHour.toString().padStart(2, '0')}:00-{activeScheduleInfo.endHour.toString().padStart(2, '0')}:00 → {activeScheduleInfo.delaySec}s delay for all cards
+                    {activeScheduleCount} schedule{activeScheduleCount > 1 ? 's' : ''} active now
                   </span>
                 </div>
               )}

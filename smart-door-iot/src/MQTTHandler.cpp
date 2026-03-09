@@ -276,26 +276,41 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
             mqtt.publish(TOPIC_RESPONSE, buf);
         }
         else if (action == "get_schedules") {
-            DynamicJsonDocument resp(2048);
+            DynamicJsonDocument resp(4096);
             resp["requestId"] = requestId;
             resp["success"] = true;
             resp["ntpSynced"] = ntpSynced;
             resp["currentHour"] = getCurrentHour();
             
             JsonArray schedules = resp.createNestedArray("schedules");
+            JsonArray enabledArr = resp.createNestedArray("enabledStates");
             for (uint8_t i = 0; i < userCardCount; i++) {
                 String uid = uidToString(userCards[i].uid, userCards[i].size);
                 String uidHex = uid;
                 uidHex.replace(":", "");
-                String key = "s" + uidHex;
-                uint8_t schedData[3] = {0};
-                size_t len = nvs.getBytes(key.c_str(), schedData, 3);
-                if (len == 3 && (schedData[0] != 0 || schedData[1] != 0 || schedData[2] != 0)) {
-                    JsonObject s = schedules.createNestedObject();
-                    s["uid"] = uid;
-                    s["startHour"] = schedData[0];
-                    s["endHour"] = schedData[1];
-                    s["delaySec"] = schedData[2];
+                
+                // Read enabled state
+                String eKey = "e" + uidHex;
+                if (eKey.length() > 15) eKey = eKey.substring(0, 15);
+                uint8_t disabled = nvs.getUChar(eKey.c_str(), 0);
+                JsonObject es = enabledArr.createNestedObject();
+                es["uid"] = uid;
+                es["enabled"] = (disabled == 0);
+                
+                // Read all schedule slots
+                for (int slot = 0; slot < 5; slot++) {
+                    String key = "s" + String(slot) + uidHex;
+                    if (key.length() > 15) key = key.substring(0, 15);
+                    uint8_t schedData[3] = {0};
+                    size_t len = nvs.getBytes(key.c_str(), schedData, 3);
+                    if (len == 3 && (schedData[0] != 0 || schedData[1] != 0 || schedData[2] != 0)) {
+                        JsonObject s = schedules.createNestedObject();
+                        s["uid"] = uid;
+                        s["slot"] = slot;
+                        s["startHour"] = schedData[0];
+                        s["endHour"] = schedData[1];
+                        s["delaySec"] = schedData[2];
+                    }
                 }
             }
             
@@ -310,13 +325,14 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
                     String uid = s["uid"] | "";
                     String uidHex = uid;
                     uidHex.replace(":", "");
+                    uint8_t slot = s["slot"] | 0;
                     if (s["remove"] | false) {
-                        removeCardScheduleFromNVS(uidHex);
+                        removeCardScheduleFromNVS(uidHex, slot);
                     } else {
                         uint8_t sh = s["startHour"] | 0;
                         uint8_t eh = s["endHour"] | 0;
                         uint8_t ds = s["delaySec"] | 0;
-                        saveCardScheduleToNVS(uidHex, sh, eh, ds);
+                        saveCardScheduleToNVS(uidHex, slot, sh, eh, ds);
                     }
                 }
                 sendResponse(requestId, true, "Schedules updated");
@@ -324,17 +340,46 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
                 String uid = doc["uid"] | "";
                 String uidHex = uid;
                 uidHex.replace(":", "");
+                uint8_t slot = doc["slot"] | 0;
                 if (doc["remove"] | false) {
-                    removeCardScheduleFromNVS(uidHex);
+                    removeCardScheduleFromNVS(uidHex, slot);
                     sendResponse(requestId, true, "Schedule removed");
                 } else {
                     uint8_t sh = doc["startHour"] | 0;
                     uint8_t eh = doc["endHour"] | 0;
                     uint8_t ds = doc["delaySec"] | 0;
-                    saveCardScheduleToNVS(uidHex, sh, eh, ds);
+                    saveCardScheduleToNVS(uidHex, slot, sh, eh, ds);
                     sendResponse(requestId, true, "Schedule saved");
                 }
             }
+        }
+        else if (action == "set_delay_enabled") {
+            if (doc.containsKey("cards")) {
+                // Bulk enable/disable
+                JsonArray arr = doc["cards"].as<JsonArray>();
+                for (JsonObject c : arr) {
+                    String uid = c["uid"] | "";
+                    String uidHex = uid;
+                    uidHex.replace(":", "");
+                    bool enabled = c["enabled"] | true;
+                    saveCardDelayEnabled(uidHex, enabled);
+                }
+                sendResponse(requestId, true, "Delay enabled states updated");
+            } else {
+                String uid = doc["uid"] | "";
+                String uidHex = uid;
+                uidHex.replace(":", "");
+                bool enabled = doc["enabled"] | true;
+                saveCardDelayEnabled(uidHex, enabled);
+                sendResponse(requestId, true, enabled ? "Delay enabled" : "Delay disabled");
+            }
+        }
+        else if (action == "remove_all_schedules") {
+            String uid = doc["uid"] | "";
+            String uidHex = uid;
+            uidHex.replace(":", "");
+            removeCardScheduleFromNVS(uidHex, -1);
+            sendResponse(requestId, true, "All schedules removed");
         }
         else {
             sendResponse(requestId, false, "Unknown config action");
@@ -917,17 +962,40 @@ void saveCardDelayToNVS(const String& uidHex, uint16_t seconds) {
     DEBUG_PRINTF("[Config] Card delay for %s: %us\n", uidHex.c_str(), seconds);
 }
 
-void saveCardScheduleToNVS(const String& uidHex, uint8_t startHour, uint8_t endHour, uint8_t delaySec) {
-    String key = "s" + uidHex;
+void saveCardScheduleToNVS(const String& uidHex, uint8_t slot, uint8_t startHour, uint8_t endHour, uint8_t delaySec) {
+    String key = "s" + String(slot) + uidHex;
+    if (key.length() > 15) key = key.substring(0, 15);
     uint8_t data[3] = {startHour, endHour, delaySec};
     nvs.putBytes(key.c_str(), data, 3);
-    DEBUG_PRINTF("[Config] Schedule for %s: %d-%d = %ds\n", uidHex.c_str(), startHour, endHour, delaySec);
+    DEBUG_PRINTF("[Config] Schedule[%d] for %s: %d-%d = %ds\n", slot, uidHex.c_str(), startHour, endHour, delaySec);
 }
 
-void removeCardScheduleFromNVS(const String& uidHex) {
-    String key = "s" + uidHex;
-    nvs.remove(key.c_str());
-    DEBUG_PRINTF("[Config] Schedule removed for %s\n", uidHex.c_str());
+void removeCardScheduleFromNVS(const String& uidHex, int8_t slot) {
+    if (slot >= 0) {
+        String key = "s" + String(slot) + uidHex;
+        if (key.length() > 15) key = key.substring(0, 15);
+        nvs.remove(key.c_str());
+        DEBUG_PRINTF("[Config] Schedule[%d] removed for %s\n", slot, uidHex.c_str());
+    } else {
+        // Remove all slots
+        for (int i = 0; i < 5; i++) {
+            String key = "s" + String(i) + uidHex;
+            if (key.length() > 15) key = key.substring(0, 15);
+            nvs.remove(key.c_str());
+        }
+        DEBUG_PRINTF("[Config] All schedules removed for %s\n", uidHex.c_str());
+    }
+}
+
+void saveCardDelayEnabled(const String& uidHex, bool enabled) {
+    String key = "e" + uidHex;
+    if (key.length() > 15) key = key.substring(0, 15);
+    if (enabled) {
+        nvs.remove(key.c_str()); // Default is enabled, remove flag
+    } else {
+        nvs.putUChar(key.c_str(), 1);
+    }
+    DEBUG_PRINTF("[Config] Card delay %s for %s\n", enabled ? "enabled" : "disabled", uidHex.c_str());
 }
 
 // ============================================
@@ -982,11 +1050,44 @@ static bool mqttConnect() {
 }
 
 // ============================================
+// MIGRATE OLD SCHEDULE KEYS
+// ============================================
+
+static void migrateScheduleKeys() {
+    // Migrate old "s"+UID single-schedule keys to "s0"+UID slot-based keys
+    for (uint8_t i = 0; i < userCardCount; i++) {
+        String uid = uidToString(userCards[i].uid, userCards[i].size);
+        String uidHex = uid;
+        uidHex.replace(":", "");
+        
+        String oldKey = "s" + uidHex;
+        if (oldKey.length() > 15) oldKey = oldKey.substring(0, 15);
+        
+        size_t len = nvs.getBytesLength(oldKey.c_str());
+        if (len == 3) {
+            uint8_t data[3] = {0};
+            nvs.getBytes(oldKey.c_str(), data, 3);
+            if (data[0] != 0 || data[1] != 0 || data[2] != 0) {
+                // Save as slot 0
+                String newKey = "s0" + uidHex;
+                if (newKey.length() > 15) newKey = newKey.substring(0, 15);
+                nvs.putBytes(newKey.c_str(), data, 3);
+                DEBUG_PRINTF("[Config] Migrated schedule for %s to slot 0\n", uidHex.c_str());
+            }
+            nvs.remove(oldKey.c_str());
+        }
+    }
+}
+
+// ============================================
 // SETUP
 // ============================================
 
 void setupMQTT() {
     DEBUG_PRINTLN("\n[MQTT] Setting up MQTT...");
+    
+    // Migrate old single-schedule NVS keys to slot-based format
+    migrateScheduleKeys();
     
     #if MQTT_USE_TLS
     espClient.setInsecure();  // Accept any certificate (for testing)

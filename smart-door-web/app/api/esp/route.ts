@@ -33,6 +33,8 @@ const COMMAND_MAP: Record<string, { topic: string; action: string }> = {
   'config.set_card_delay': { topic: TOPICS.CMD_CONFIG, action: 'set_card_delay' },
   'config.get_schedules': { topic: TOPICS.CMD_CONFIG, action: 'get_schedules' },
   'config.set_schedule':  { topic: TOPICS.CMD_CONFIG, action: 'set_schedule' },
+  'config.set_delay_enabled': { topic: TOPICS.CMD_CONFIG, action: 'set_delay_enabled' },
+  'config.remove_all_schedules': { topic: TOPICS.CMD_CONFIG, action: 'remove_all_schedules' },
   
   // Mode
   'mode.register':     { topic: TOPICS.CMD_MODE, action: 'register' },

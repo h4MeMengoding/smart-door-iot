@@ -12,52 +12,63 @@
 // HELPER: Get card delay from NVS
 // ============================================
 
-static unsigned long getCardDelayMs(byte* uid, byte size) {
-    // Build NVS key: "d" + UID hex, e.g. "dBE0228DB"
-    String key = "d";
+#define MAX_SCHEDULES_PER_CARD 5
+
+static String buildUidHex(byte* uid, byte size) {
+    String hex = "";
     for (byte i = 0; i < size; i++) {
-        if (uid[i] < 0x10) key += "0";
-        key += String(uid[i], HEX);
+        if (uid[i] < 0x10) hex += "0";
+        hex += String(uid[i], HEX);
     }
-    key.toUpperCase();
+    hex.toUpperCase();
+    return hex;
+}
+
+static unsigned long getCardDelayMs(byte* uid, byte size) {
+    String uidHex = buildUidHex(uid, size);
     
-    // NVS key max 15 chars — should be fine for 4-7 byte UIDs
-    if (key.length() > 15) {
-        key = key.substring(0, 15);
+    // Check disable flag: "e" + UID hex
+    String disableKey = "e" + uidHex;
+    if (disableKey.length() > 15) disableKey = disableKey.substring(0, 15);
+    uint8_t disabled = nvs.getUChar(disableKey.c_str(), 0);
+    if (disabled) {
+        DEBUG_PRINTF("[AUTH] Card %s delay disabled\n", uidHex.c_str());
+        return 0;
     }
     
-    // Check time-based schedule first
+    // Build static delay key: "d" + UID hex
+    String key = "d" + uidHex;
+    if (key.length() > 15) key = key.substring(0, 15);
+    
+    // Check time-based schedules (slots 0-4)
     int currentHr = getCurrentHour();
     if (currentHr >= 0) {
-        // Build schedule NVS key: "s" + UID hex
-        String schedKey = "s";
-        for (byte i = 0; i < size; i++) {
-            if (uid[i] < 0x10) schedKey += "0";
-            schedKey += String(uid[i], HEX);
-        }
-        schedKey.toUpperCase();
-        if (schedKey.length() > 15) schedKey = schedKey.substring(0, 15);
-        
-        // Read schedule: 3 bytes [startHour, endHour, delaySec]
-        uint8_t schedData[3] = {0};
-        size_t schedLen = nvs.getBytesLength(schedKey.c_str());
-        DEBUG_PRINTF("[AUTH] Schedule key '%s': len=%d, currentHr=%d\n", schedKey.c_str(), (int)schedLen, currentHr);
-        if (schedLen == 3) {
+        for (int slot = 0; slot < MAX_SCHEDULES_PER_CARD; slot++) {
+            // Build schedule NVS key: "s0" + UID, "s1" + UID, etc.
+            String schedKey = "s" + String(slot) + uidHex;
+            if (schedKey.length() > 15) schedKey = schedKey.substring(0, 15);
+            
+            uint8_t schedData[3] = {0};
+            size_t schedLen = nvs.getBytesLength(schedKey.c_str());
+            if (schedLen != 3) continue;
+            
             nvs.getBytes(schedKey.c_str(), schedData, 3);
             uint8_t startH = schedData[0];
             uint8_t endH = schedData[1];
             uint8_t schedDelay = schedData[2];
             
+            // Skip empty slots
+            if (startH == 0 && endH == 0 && schedDelay == 0) continue;
+            
             bool inRange = false;
             if (startH <= endH) {
-                // Normal range: e.g. 8-17
                 inRange = (currentHr >= startH && currentHr < endH);
             } else {
                 // Wrapping range: e.g. 22-8 means 22,23,0,1,...,7
                 inRange = (currentHr >= startH || currentHr < endH);
             }
             
-            DEBUG_PRINTF("[AUTH] Schedule %02d:00-%02d:00 delay=%us inRange=%s\n", startH, endH, schedDelay, inRange ? "YES" : "no");
+            DEBUG_PRINTF("[AUTH] Schedule[%d] %02d:00-%02d:00 delay=%us inRange=%s\n", slot, startH, endH, schedDelay, inRange ? "YES" : "no");
             if (inRange) {
                 return (unsigned long)schedDelay * 1000;
             }

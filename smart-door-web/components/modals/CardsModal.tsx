@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { CreditCard, Trash2, Pen, Plus, X, Check, WifiOff, RefreshCw } from 'lucide-react';
@@ -31,14 +31,25 @@ export function CardsModal({ isOpen, onClose, onCardsChanged }: CardsModalProps)
   const [editNickname, setEditNickname] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeCard, setActiveCard] = useState<string | null>(null);
+  const espCardsRef = useRef<string[]>([]);
 
   const fetchCards = async () => {
     try {
       setApiError(false);
       const response = await fetch('/api/cards');
       if (!response.ok) throw new Error('Failed to fetch cards');
-      const data = await response.json();
-      setCards(data);
+      const data: CardType[] = await response.json();
+      setCards(() => {
+        const dbMap = new Map(data.map((c) => [c.uid.replace(/:/g, '').toUpperCase(), c]));
+        const result = [...data];
+        for (const uid of espCardsRef.current) {
+          const key = uid.replace(/:/g, '').toUpperCase();
+          if (!dbMap.has(key)) {
+            result.push({ uid, nickname: undefined, addedAt: new Date().toISOString() });
+          }
+        }
+        return result;
+      });
       setIsLoading(false);
     } catch (error) {
       console.error('Fetch cards error:', error);
@@ -60,6 +71,7 @@ export function CardsModal({ isOpen, onClose, onCardsChanged }: CardsModalProps)
 
     const unsubInstant = dashboardEvents.on('cards-instant-update', (espUids: string[]) => {
       if (!isOpen || !Array.isArray(espUids)) return;
+      espCardsRef.current = espUids;
       setCards((prev) => {
         const existingMap = new Map(prev.map((c) => [c.uid.replace(/:/g, '').toUpperCase(), c]));
         const merged: CardType[] = [];

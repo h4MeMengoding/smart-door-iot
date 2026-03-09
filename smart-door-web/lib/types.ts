@@ -68,6 +68,7 @@ export interface AccessLog {
 export interface CardDelayConfig {
   cardUid: string;
   delaySec: number;
+  enabled: boolean;
 }
 
 export interface CardDelayScheduleConfig {
@@ -75,6 +76,7 @@ export interface CardDelayScheduleConfig {
   startHour: number;
   endHour: number;
   delaySec: number;
+  slot?: number;
 }
 
 export interface ScheduledRestartConfig {

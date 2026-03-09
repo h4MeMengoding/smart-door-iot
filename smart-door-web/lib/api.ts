@@ -162,20 +162,32 @@ class ApiClient {
 
   // ── Card Delay Schedule ──
 
-  async getEspSchedules(): Promise<{ success: boolean; ntpSynced: boolean; currentHour: number; schedules: { uid: string; startHour: number; endHour: number; delaySec: number }[] }> {
+  async getEspSchedules(): Promise<{ success: boolean; ntpSynced: boolean; currentHour: number; schedules: { uid: string; slot: number; startHour: number; endHour: number; delaySec: number }[]; enabledStates: { uid: string; enabled: boolean }[] }> {
     return this.command('config.get_schedules');
   }
 
-  async pushCardSchedule(uid: string, startHour: number, endHour: number, delaySec: number): Promise<{ success: boolean }> {
-    return this.command('config.set_schedule', { uid, startHour, endHour, delaySec });
+  async pushCardSchedule(uid: string, slot: number, startHour: number, endHour: number, delaySec: number): Promise<{ success: boolean }> {
+    return this.command('config.set_schedule', { uid, slot, startHour, endHour, delaySec });
   }
 
-  async removeCardSchedule(uid: string): Promise<{ success: boolean }> {
-    return this.command('config.set_schedule', { uid, remove: true });
+  async removeCardSchedule(uid: string, slot: number): Promise<{ success: boolean }> {
+    return this.command('config.set_schedule', { uid, slot, remove: true });
   }
 
-  async pushBulkCardSchedules(schedules: { uid: string; startHour: number; endHour: number; delaySec: number; remove?: boolean }[]): Promise<{ success: boolean }> {
+  async removeAllCardSchedules(uid: string): Promise<{ success: boolean }> {
+    return this.command('config.remove_all_schedules', { uid });
+  }
+
+  async pushBulkCardSchedules(schedules: { uid: string; slot: number; startHour: number; endHour: number; delaySec: number; remove?: boolean }[]): Promise<{ success: boolean }> {
     return this.command('config.set_schedule', { schedules });
+  }
+
+  async setCardDelayEnabled(uid: string, enabled: boolean): Promise<{ success: boolean }> {
+    return this.command('config.set_delay_enabled', { uid, enabled });
+  }
+
+  async bulkSetCardDelayEnabled(cards: { uid: string; enabled: boolean }[]): Promise<{ success: boolean }> {
+    return this.command('config.set_delay_enabled', { cards });
   }
 
   // ── ESP32 Time ──

@@ -81,7 +81,7 @@ export function parseUptime(uptime: string): string {
   return parts.join(' ');
 }
 // Master Card UIDs (hardcoded in ESP32, cannot be deleted from dashboard)
-export const MASTER_CARD_UIDS = ['BE0228DB', 'CAFEBABE'];
+export const MASTER_CARD_UIDS = ['710F8AE6'];
 
 export function isMasterCardUid(uid: string): boolean {
   const normalized = uid.replace(/:/g, '').toUpperCase();

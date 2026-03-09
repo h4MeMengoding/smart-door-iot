@@ -29,17 +29,15 @@
 // ============================================
 
 // Jumlah master cards yang diizinkan
-#define MAX_MASTER_CARDS 2
+#define MAX_MASTER_CARDS 1
 
 // Master Card UIDs (Hardcoded)
 // Format: {size, uid_bytes...}
 // Example: 4-byte UID = {4, 0xDE, 0xAD, 0xBE, 0xEF}
-// ⚠️ GANTI dengan UID kartu master Anda!
 // Cara mendapatkan UID: Upload code, tap kartu, lihat Serial Monitor
 
 const byte MASTER_CARDS[MAX_MASTER_CARDS][8] = {
-    {4, 0xBE, 0x02, 0x28, 0xDB, 0x00, 0x00, 0x00},  // Card yang baru dibaca
-    {4, 0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00}   // Optional: Master card kedua
+    {4, 0x71, 0x0F, 0x8A, 0xE6, 0x00, 0x00, 0x00}   // Master card: 71:0F:8A:E6
 };
 
 // ============================================

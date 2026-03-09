@@ -259,21 +259,9 @@ export default function DashboardPage() {
             if (source.accessType === 'WEB') {
               toast.success('Door unlocked via web');
               sendLocalNotification('door_open', 'Door Opened', 'Door unlocked via Web Dashboard', 'door-open');
-              // Ensure WEB unlock is logged to DB (ESP32 may not send access_log for API unlocks)
-              fetch('/api/logs', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'unlock', success: true, accessType: 'WEB' }),
-              }).catch(() => {});
             } else if (source.accessType === 'TOUCH') {
               toast.success('Door unlocked via touch');
               sendLocalNotification('door_open', 'Door Opened', 'Door unlocked via Touch Sensor', 'door-open');
-              // Ensure TOUCH unlock is logged to DB
-              fetch('/api/logs', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'unlock', success: true, accessType: 'TOUCH' }),
-              }).catch(() => {});
             } else {
               toast.success('Door unlocked');
               sendLocalNotification('door_open', 'Door Opened', 'Door unlocked via RFID', 'door-open');

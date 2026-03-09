@@ -23,13 +23,25 @@ export function CardsSection({ onExpand, countdown, isLocked = true }: CardsSect
   const [isPaused, setIsPaused] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const espCardsRef = useRef<string[]>([]);
 
   const fetchCards = async () => {
     try {
       const response = await fetch('/api/cards');
       if (!response.ok) throw new Error('Failed to fetch cards');
-      const data = await response.json();
-      setCards(data);
+      const data: CardType[] = await response.json();
+      setCards(() => {
+        // Merge: DB is source of truth for metadata, but preserve ESP-reported cards not yet in DB
+        const dbMap = new Map(data.map((c) => [c.uid.replace(/:/g, '').toUpperCase(), c]));
+        const result = [...data];
+        for (const uid of espCardsRef.current) {
+          const key = uid.replace(/:/g, '').toUpperCase();
+          if (!dbMap.has(key)) {
+            result.push({ uid, nickname: undefined, addedAt: new Date().toISOString() });
+          }
+        }
+        return result;
+      });
       setIsLoading(false);
     } catch (error) {
       console.error('Fetch cards error:', error);
@@ -44,6 +56,7 @@ export function CardsSection({ onExpand, countdown, isLocked = true }: CardsSect
 
     const unsubInstant = dashboardEvents.on('cards-instant-update', (espUids: string[]) => {
       if (Array.isArray(espUids)) {
+        espCardsRef.current = espUids;
         setCards((prev) => {
           const existingMap = new Map(prev.map((c) => [c.uid.replace(/:/g, '').toUpperCase(), c]));
           const merged: CardType[] = [];

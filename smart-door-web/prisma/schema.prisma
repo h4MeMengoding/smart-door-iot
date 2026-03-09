@@ -39,6 +39,7 @@ model CardDelayConfig {
   id        String   @id @default(uuid())
   cardUid   String   @unique @map("card_uid")
   delaySec  Int      @default(0) @map("delay_sec")
+  enabled   Boolean  @default(true)
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("card_delay_configs")

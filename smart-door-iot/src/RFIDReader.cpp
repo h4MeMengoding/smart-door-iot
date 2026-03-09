@@ -4,6 +4,10 @@
 #include "CardManager.h"
 #include <SPI.h>
 
+// Periodic antenna reinit to prevent MFRC522 stuck states
+static unsigned long lastAntennaReinit = 0;
+#define ANTENNA_REINIT_INTERVAL 5000  // Re-init antenna every 5 seconds
+
 // ============================================
 // RFID HANDLER
 // ============================================
@@ -44,13 +48,33 @@ bool initRFID() {
 }
 
 bool readCard(byte* uid, byte* size) {
-    // Check for new card (non-blocking)
-    if (!rfid.PICC_IsNewCardPresent()) {
+    // Periodic antenna reinit to recover from stuck MFRC522 states
+    // (SPI interference, failed reads, etc. can cause module to stop detecting cards)
+    unsigned long now = millis();
+    if (now - lastAntennaReinit >= ANTENNA_REINIT_INTERVAL) {
+        lastAntennaReinit = now;
+        rfid.PCD_Init();
+    }
+
+    // Use WUPA instead of REQA to detect cards in BOTH Idle and Halt states.
+    // PICC_IsNewCardPresent() sends REQA which ONLY wakes Idle cards.
+    // Some cards get stuck in Halt state after PCD_Init() resets the reader
+    // while the card is still in the RF field — the card never transitions
+    // back to Idle and becomes permanently invisible to REQA.
+    // WUPA fixes this. Our isNewCardScan() cooldown prevents repeat detection.
+    byte bufferATQA[2];
+    byte bufferSize = sizeof(bufferATQA);
+    MFRC522::StatusCode status = rfid.PICC_WakeupA(bufferATQA, &bufferSize);
+    if (status != MFRC522::STATUS_OK && status != MFRC522::STATUS_COLLISION) {
         return false;
     }
     
-    // Read card serial
+    // Read card serial (anticollision + select)
     if (!rfid.PICC_ReadCardSerial()) {
+        // Card responded to WUPA but anticollision/SELECT failed.
+        // Halt it so it doesn't block subsequent detections.
+        rfid.PICC_HaltA();
+        rfid.PCD_StopCrypto1();
         return false;
     }
     
@@ -59,7 +83,7 @@ bool readCard(byte* uid, byte* size) {
         uid[i] = rfid.uid.uidByte[i];
     }
     
-    // CRITICAL: Halt PICC dan stop crypto untuk free SPI bus
+    // Halt PICC and stop crypto to free SPI bus
     rfid.PICC_HaltA();
     rfid.PCD_StopCrypto1();
     

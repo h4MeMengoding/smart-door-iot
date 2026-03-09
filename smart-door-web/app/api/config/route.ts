@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSystemConfig, setSystemConfig, getCardDelays, upsertCardDelay, deleteCardDelay, getCardDelaySchedules, upsertCardDelaySchedule, deleteCardDelaySchedule, deleteAllCardDelaySchedules, bulkUpsertCardDelaySchedule } from '@/lib/db';
+import { getSystemConfig, setSystemConfig, getCardDelays, upsertCardDelay, deleteCardDelay, getCardDelaySchedules, upsertCardDelaySchedule, deleteCardDelaySchedule, deleteAllCardDelaySchedules, bulkUpsertCardDelaySchedule, setCardDelayEnabled, bulkSetCardDelayEnabled } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +17,7 @@ export async function GET() {
     const mappedDelays = cardDelays.map((d) => ({
       cardUid: d.cardUid,
       delaySec: d.delaySec,
+      enabled: d.enabled,
     }));
     const mappedSchedules = cardSchedules.map((s) => ({
       cardUid: s.cardUid,
@@ -43,7 +44,7 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { autoLockDuration, cardDelay, cardSchedule, bulkSchedule, removeSchedule } = body;
+    const { autoLockDuration, cardDelay, cardSchedule, bulkSchedule, removeSchedule, enableDelay, bulkEnableDelay } = body;
 
     // Update auto-lock duration
     if (autoLockDuration !== undefined) {
@@ -90,6 +91,22 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // Enable/disable delay for a single card
+    if (enableDelay) {
+      const { cardUid, enabled } = enableDelay;
+      if (cardUid !== undefined && enabled !== undefined) {
+        await setCardDelayEnabled(cardUid, enabled);
+      }
+    }
+
+    // Bulk enable/disable delay
+    if (bulkEnableDelay) {
+      const { cardUids, enabled } = bulkEnableDelay;
+      if (cardUids?.length && enabled !== undefined) {
+        await bulkSetCardDelayEnabled(cardUids, enabled);
+      }
+    }
+
     // Return updated config — parallel fetch
     const [updatedAutoLockStr, currentDelays, currentSchedules] = await Promise.all([
       getSystemConfig('auto_lock_duration'),
@@ -104,6 +121,7 @@ export async function PUT(request: NextRequest) {
       cardDelays: currentDelays.map((d) => ({
         cardUid: d.cardUid,
         delaySec: d.delaySec,
+        enabled: d.enabled,
       })),
       cardSchedules: currentSchedules.map((s) => ({
         cardUid: s.cardUid,

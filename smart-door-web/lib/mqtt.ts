@@ -320,7 +320,7 @@ async function processAccessLog(event: MqttAccessLogEvent) {
   try {
     let timestamp = event.isoTimestamp ? new Date(event.isoTimestamp) : new Date();
     if (isNaN(timestamp.getTime())) timestamp = new Date();
-    const windowMs = 5000; // 5 seconds
+    const windowMs = 10_000; // 10 seconds — matches /api/logs dedup window
     const start = new Date(timestamp.getTime() - windowMs);
     const end = new Date(timestamp.getTime() + windowMs);
 

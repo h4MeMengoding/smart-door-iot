@@ -102,12 +102,33 @@ export async function getCardDelay(cardUid: string) {
   return prisma.cardDelayConfig.findUnique({ where: { cardUid } });
 }
 
-export async function upsertCardDelay(cardUid: string, delaySec: number) {
+export async function upsertCardDelay(cardUid: string, delaySec: number, enabled?: boolean) {
+  const data: { delaySec: number; enabled?: boolean } = { delaySec };
+  if (enabled !== undefined) data.enabled = enabled;
   return prisma.cardDelayConfig.upsert({
     where: { cardUid },
-    update: { delaySec },
-    create: { cardUid, delaySec },
+    update: data,
+    create: { cardUid, delaySec, enabled: enabled ?? true },
   });
+}
+
+export async function setCardDelayEnabled(cardUid: string, enabled: boolean) {
+  return prisma.cardDelayConfig.upsert({
+    where: { cardUid },
+    update: { enabled },
+    create: { cardUid, delaySec: 0, enabled },
+  });
+}
+
+export async function bulkSetCardDelayEnabled(cardUids: string[], enabled: boolean) {
+  const ops = cardUids.map((uid) =>
+    prisma.cardDelayConfig.upsert({
+      where: { cardUid: uid },
+      update: { enabled },
+      create: { cardUid: uid, delaySec: 0, enabled },
+    })
+  );
+  return prisma.$transaction(ops);
 }
 
 export async function deleteCardDelay(cardUid: string) {

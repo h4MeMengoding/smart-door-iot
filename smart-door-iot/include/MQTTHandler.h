@@ -72,8 +72,9 @@ void publishAccessLog(const String& uid, const String& action, bool success, con
 // Config NVS helpers (same as APIHandler had)
 void saveAutoLockToNVS(uint16_t seconds);
 void saveCardDelayToNVS(const String& uidHex, uint16_t seconds);
-void saveCardScheduleToNVS(const String& uidHex, uint8_t startHour, uint8_t endHour, uint8_t delaySec);
-void removeCardScheduleFromNVS(const String& uidHex);
+void saveCardScheduleToNVS(const String& uidHex, uint8_t slot, uint8_t startHour, uint8_t endHour, uint8_t delaySec);
+void removeCardScheduleFromNVS(const String& uidHex, int8_t slot = -1);
+void saveCardDelayEnabled(const String& uidHex, bool enabled);
 
 // Handle MQTT tasks (call from loop)
 void handleMQTTTasks();
