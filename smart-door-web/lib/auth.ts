@@ -164,9 +164,12 @@ export async function verifyCurrentPin(pin: string): Promise<boolean> {
 
 /** Set session cookie */
 export async function setSessionCookie(token: string): Promise<void> {
+  const isSecure = process.env.SECURE_COOKIES === 'true' || 
+                  (process.env.NODE_ENV === 'production' && process.env.VERCEL === '1');
+                  
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isSecure,
     sameSite: 'lax',
     maxAge: SESSION_MAX_AGE,
     path: '/',
