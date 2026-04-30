@@ -1,0 +1,11 @@
+Dockerfile
+.dockerignore
+node_modules
+npm-debug.log
+README.md
+.next
+.git
+# Kami hapus file .env dari ignore agar proses build Next.js bisa membaca NEXT_PUBLIC_ variables
+# .env
+# .env.*
+!.env.example

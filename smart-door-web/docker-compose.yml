@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smart-door-web
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # DB URL bisa menggunakan Neon Serverless atau Postgres lokal
+      - DATABASE_URL=${DATABASE_URL}
+      - NEXT_PUBLIC_ESP32_URL=${NEXT_PUBLIC_ESP32_URL}
+      - ESP32_API_KEY=${ESP32_API_KEY}
+      - DASHBOARD_PIN=${DASHBOARD_PIN}
+      - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+    env_file:
+      - .env
