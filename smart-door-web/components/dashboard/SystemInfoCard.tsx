@@ -27,7 +27,7 @@ function formatUptime(totalSeconds: number): string {
   if (days > 0) parts.push(`${days}d`);
   if (hours > 0) parts.push(`${hours}h`);
   if (minutes > 0) parts.push(`${minutes}m`);
-  parts.push(`${secs}s`);
+  if (secs > 0) parts.push(`${secs}s`);
 
   return parts.join(' ');
 }
@@ -289,7 +289,7 @@ export function SystemInfoCard({ uptimeRaw, isConnected = false, sysInfo = null 
           <div className="flex flex-col items-start">
             <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>Uptime</span>
             <span className="text-[13px] font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
-              {uptimeSeconds > 0 ? `${Math.floor(uptimeSeconds / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m` : '-'}
+              {uptimeSeconds > 0 ? `${Math.floor(uptimeSeconds / 86400)}d ${Math.floor((uptimeSeconds % 86400) / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m` : '-'}
             </span>
           </div>
         </div>
