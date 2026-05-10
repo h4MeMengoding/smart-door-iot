@@ -483,8 +483,10 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
             resp["requestId"] = requestId;
             resp["success"] = true;
             resp["rfidDisabled"] = rfidDisabled;
-            resp["rfidAutoEnableMs"] = (rfidAutoEnableTime > 0 && rfidAutoEnableTime > millis()) 
-                ? (rfidAutoEnableTime - millis()) : 0;
+            
+            long remaining = (long)(rfidAutoEnableTime - millis());
+            resp["rfidAutoEnableMs"] = (rfidAutoEnableTime > 0 && remaining > 0) ? remaining : 0;
+            
             char buf[256];
             serializeJson(resp, buf, sizeof(buf));
             mqtt.publish(TOPIC_RESPONSE, buf);
@@ -497,7 +499,12 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
             }
             rfidDisabled = true;
             rfidAutoEnableTime = millis() + ((unsigned long)minutes * 60000);
-            nvs.putUChar(NVS_RFID_OFF_KEY, 1);
+            
+            // DO NOT SAVE TO NVS FOR TIMED DISABLE!
+            // If the ESP32 restarts while timed-disabled, it will safely default back to enabled,
+            // preventing the reader from being permanently bricked due to a lost timer.
+            // nvs.putUChar(NVS_RFID_OFF_KEY, 1);
+            
             playBuzzerPattern(PATTERN_RFID_DISABLED);
             lastEvent = "RFID disabled " + String(minutes) + "m (MQTT)";
             publishDoorStatus();
@@ -759,8 +766,9 @@ static void buildStatusJson(JsonDocument& doc) {
     doc["uptime"] = String(uptimeMs / 1000) + "s";
     doc["autoLockDuration"] = configuredAutoLockMs / 1000;
     doc["rfidDisabled"] = rfidDisabled;
-    doc["rfidAutoEnableMs"] = (rfidAutoEnableTime > 0 && rfidAutoEnableTime > millis())
-        ? (rfidAutoEnableTime - millis()) : 0;
+    
+    long rem = (long)(rfidAutoEnableTime - millis());
+    doc["rfidAutoEnableMs"] = (rfidAutoEnableTime > 0 && rem > 0) ? rem : 0;
     
     int hr = getCurrentHour();
     doc["ntpSynced"] = ntpSynced;

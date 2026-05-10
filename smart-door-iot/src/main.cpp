@@ -183,14 +183,19 @@ void loop() {
     }
 
     // RFID auto-re-enable timer check
-    if (rfidDisabled && rfidAutoEnableTime > 0 && millis() >= rfidAutoEnableTime) {
-        rfidDisabled = false;
-        rfidAutoEnableTime = 0;
-        nvs.putUChar(NVS_RFID_OFF_KEY, 0);
-        playBuzzerPattern(PATTERN_RFID_DISABLED);
-        DEBUG_PRINTLN("[RFID] Auto re-enabled (timer expired)");
-        lastEvent = "RFID auto-enabled (timer)";
-        broadcastDoorStatus();
+    // Note: Using subtraction to avoid millis() overflow issues if the device runs for 50+ days.
+    // Since rfidAutoEnableTime is a future timestamp, we check if the remaining time has wrapped or is 0.
+    if (rfidDisabled && rfidAutoEnableTime > 0) {
+        long remaining = (long)(rfidAutoEnableTime - millis());
+        if (remaining <= 0) {
+            rfidDisabled = false;
+            rfidAutoEnableTime = 0;
+            nvs.putUChar(NVS_RFID_OFF_KEY, 0);
+            playBuzzerPattern(PATTERN_RFID_DISABLED);
+            DEBUG_PRINTLN("[RFID] Auto re-enabled (timer expired)");
+            lastEvent = "RFID auto-enabled (timer)";
+            broadcastDoorStatus();
+        }
     }
 
     // Periodic NTP re-check (every 30 min) — ensures time stays accurate
