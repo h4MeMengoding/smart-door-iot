@@ -2,57 +2,8 @@
 
 /* ── Design Tokens — Smart Door IoT ── */
 :root {
-  /* Background */
-  --bg-base: #F0F1F3;
-  --bg-surface: #F8F8FA;
-  --bg-surface-hover: #F3F3F6;
-  --bg-elevated: #EDEDF0;
-  --bg-sidebar: #F5F5F7;
-  --bg-input: #EDEDF0;
+  color-scheme: dark;
 
-  /* Primary — Lime Green */
-  --primary: #BFFE01;
-  --primary-hover: #A8E000;
-  --primary-light: rgba(191, 254, 1, 0.18);
-  --primary-ghost: rgba(191, 254, 1, 0.10);
-  --primary-text: #09090B;
-
-  /* Secondary — Blue */
-  --secondary: #38A0FF;
-  --secondary-light: rgba(56, 160, 255, 0.12);
-  --secondary-text: #1D4ED8;
-
-  /* Text */
-  --text-primary: #18181B;
-  --text-secondary: #3F3F46;
-  --text-muted: #6B6B76;
-  --text-inverse: #FFFFFF;
-
-  /* Border */
-  --border: #DDDDE2;
-  --border-strong: #C8C8CF;
-
-  /* Status */
-  --success: #16A34A;
-  --success-light: rgba(22, 163, 74, 0.10);
-  --success-text: #15803D;
-  --danger: #DC2626;
-  --danger-light: rgba(220, 38, 38, 0.08);
-  --danger-text: #B91C1C;
-  --warning: #D97706;
-  --warning-light: rgba(217, 119, 6, 0.10);
-  --warning-text: #B45309;
-  --info: #2563EB;
-  --info-light: rgba(37, 99, 235, 0.08);
-  --info-text: #1D4ED8;
-
-  /* Shadow */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 2px 10px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.10);
-}
-
-.dark {
   /* Background */
   --bg-base: #09090B;
   --bg-surface: #111113;
@@ -187,13 +138,9 @@ body {
   position: fixed;
   border-radius: 50%;
   filter: blur(100px);
-  opacity: 0.3;
+  opacity: 0.15;
   pointer-events: none;
   z-index: 0;
-}
-
-.dark .glow {
-  opacity: 0.15;
 }
 
 .glow-1 {
@@ -259,5 +206,3 @@ body {
     transform: translate(-50%, -50%) scale(1.2);
   }
 }
-
-

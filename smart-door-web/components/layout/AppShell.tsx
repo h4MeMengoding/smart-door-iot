@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect } from 'react';
-import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import { Toaster } from 'react-hot-toast';
 import { SplashScreen } from './SplashScreen';
 
@@ -89,7 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <ThemeProvider>
+    <>
       <SplashScreen />
       <LayoutContent>{children}</LayoutContent>
       <Toaster
@@ -118,6 +117,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           },
         }}
       />
-    </ThemeProvider>
+    </>
   );
 }

@@ -3,13 +3,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/Button';
 import {
-  X, Wifi, Volume2, Sun, Moon, Clock, RefreshCw, Terminal,
+  X, Wifi, Volume2, Clock, RefreshCw, Terminal,
   ChevronRight, Monitor,
 } from 'lucide-react';
 import { getMqttWsUrl } from '@/lib/config';
 import { api } from '@/lib/api';
 import { EspTime } from '@/lib/types';
-import { useTheme } from '@/components/providers/ThemeProvider';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { logSystemEvent } from '@/lib/systemEvents';
@@ -37,7 +36,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [mqttWsUrl] = useState(() => getMqttWsUrl());
   const [isRestarting, setIsRestarting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const { theme, setTheme } = useTheme();
 
   // ESP32 Clock
   const [espTime, setEspTime] = useState<EspTime | null>(null);
@@ -218,47 +216,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
             {/* ── Scrollable content ── */}
             <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-5">
-
-              {/* ─── GENERAL ─── */}
-              <div>
-                <SectionLabel>General</SectionLabel>
-                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-                  <div
-                    className="flex items-center gap-3 px-3 py-2.5"
-                    style={{ background: 'var(--bg-surface)' }}
-                  >
-                    <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                      style={{ background: 'var(--primary-light)' }}
-                    >
-                      {theme === 'dark'
-                        ? <Moon className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                        : <Sun className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-                      }
-                    </div>
-                    <p className="flex-1 text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>Appearance</p>
-                    <div
-                      className="flex rounded-lg overflow-hidden"
-                      style={{ border: '1px solid var(--border)' }}
-                    >
-                      {(['light', 'dark'] as const).map((t) => (
-                        <button
-                          key={t}
-                          onClick={() => setTheme(t)}
-                          className="px-3 py-1.5 text-[11px] font-semibold transition-all flex items-center gap-1.5"
-                          style={{
-                            background: theme === t ? 'var(--primary)' : 'var(--bg-surface)',
-                            color: theme === t ? 'var(--primary-text)' : 'var(--text-muted)',
-                          }}
-                        >
-                          {t === 'light' ? <Sun className="w-3 h-3" /> : <Moon className="w-3 h-3" />}
-                          {t.charAt(0).toUpperCase() + t.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
 
               {/* ─── SECURITY ─── */}
               <div>

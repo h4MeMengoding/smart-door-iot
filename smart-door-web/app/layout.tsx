@@ -14,10 +14,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#F0F1F3' },
-    { media: '(prefers-color-scheme: dark)', color: '#09090B' },
-  ],
+  themeColor: '#09090B',
   viewportFit: 'cover',
 };
 
@@ -50,7 +47,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en">
       <body className={rethinkSans.className}>
         <AppShell>{children}</AppShell>
       </body>
