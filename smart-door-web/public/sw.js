@@ -5,6 +5,7 @@
 //   - Navigation (HTML pages) → NEVER intercepted (fresh React bundles)
 //   - Manifest (.webmanifest) → NEVER intercepted (Chrome needs direct access for PWA)
 //   - /_next/static/* → Cache-first (content-hashed, immutable per deploy)
+//   - Public icons/assets → Cache-first (non-sensitive, stable resources)
 //   - Everything else → NEVER intercepted (pass-through)
 //
 // NO PRE-CACHING — Cloudflare Access/Tunnel can block fetch during SW install.
@@ -33,7 +34,7 @@ self.addEventListener('activate', (event) => {
 });
 
 // ─── Fetch ───
-// ONLY intercept /_next/static/* (immutable hashed assets).
+// Intercept immutable Next.js assets and public icons only.
 // Everything else passes through to the network untouched.
 self.addEventListener('fetch', (event) => {
   const { request } = event;
@@ -41,9 +42,9 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Only cache Next.js immutable static assets (content-hashed filenames).
-  // These are safe to cache forever — new deploy = new filename.
-  if (url.pathname.startsWith('/_next/static/')) {
+  // These resources contain no user/device data and are safe to cache.
+  // Hashed Next assets are immutable; icons are stable public resources.
+  if (url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/favicon/')) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
@@ -60,7 +61,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Everything else: DO NOT intercept.
-  // This ensures manifest, favicon, API, navigation all go directly to network.
+  // Manifest, API, navigation, and device data go directly to network.
   // Critical for Cloudflare Access compatibility.
 });
 

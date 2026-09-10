@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
-import { SplashScreen } from './SplashScreen';
 
 function LayoutContent({ children }: { children: React.ReactNode }) {
   return (
@@ -89,7 +88,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <SplashScreen />
       <LayoutContent>{children}</LayoutContent>
       <Toaster
         position="top-right"

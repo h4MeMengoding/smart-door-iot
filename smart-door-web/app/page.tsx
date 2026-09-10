@@ -1,22 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  useSortable,
-  rectSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import dynamic from 'next/dynamic';
 import { Header } from '@/components/layout/Header';
 import { DoorStatusCard } from '@/components/dashboard/DoorStatusCard';
 import { LastAccessCard } from '@/components/dashboard/LastAccessCard';
@@ -33,80 +18,22 @@ import { CardDelayCard } from '@/components/dashboard/CardDelayCard';
 import { FloatingDoorButton } from '@/components/dashboard/FloatingDoorButton';
 import { DashboardSkeletons } from '@/components/dashboard/DashboardSkeleton';
 import { MasonryGrid } from '@/components/dashboard/MasonryGrid';
-import { CardsModal } from '@/components/modals/CardsModal';
-import { LogsModal } from '@/components/modals/LogsModal';
-import { ArrangeModal } from '@/components/modals/ArrangeModal';
+const EditableDashboard = dynamic(() => import('@/components/dashboard/EditableDashboard').then((mod) => mod.EditableDashboard), { ssr: false });
+const CardsModal = dynamic(() => import('@/components/modals/CardsModal').then((mod) => mod.CardsModal), { ssr: false });
+const LogsModal = dynamic(() => import('@/components/modals/LogsModal').then((mod) => mod.LogsModal), { ssr: false });
+const ArrangeModal = dynamic(() => import('@/components/modals/ArrangeModal').then((mod) => mod.ArrangeModal), { ssr: false });
 import { DoorStatus, SystemInfo, WebSocketMessage } from '@/lib/types';
 import { api } from '@/lib/api';
 import { useMqtt as useWebSocket } from '@/hooks/useMqtt';
 import { useDashboardLayout } from '@/hooks/useDashboardLayout';
 import { dashboardEvents } from '@/lib/dashboardEvents';
 import { sendLocalNotification } from '@/lib/notifications';
-import { WifiOff, RefreshCw, GripVertical, LayoutDashboard, Check, RotateCcw, CreditCard as CreditCardIcon, FileText, LayoutList } from 'lucide-react';
+import { WifiOff, RefreshCw, LayoutDashboard, Check, RotateCcw, CreditCard as CreditCardIcon, FileText, LayoutList } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
 const DEFAULT_AUTO_LOCK = 5;
-
-// ── Sortable Card Wrapper (masonry-compatible) ──
-interface SortableCardProps {
-  id: string;
-  index: number;
-  isEditing: boolean;
-  children: ReactNode;
-}
-
-function SortableCard({ id, index, isEditing, children }: SortableCardProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id, disabled: !isEditing });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`relative group ${isEditing ? 'cursor-grab active:cursor-grabbing' : ''}`}
-    >
-      {isEditing && (
-        <div
-          {...attributes}
-          {...listeners}
-          className="absolute -top-2 -right-2 z-20 w-7 h-7 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
-          style={{
-            background: 'var(--primary)',
-            color: 'var(--primary-text)',
-            boxShadow: 'var(--shadow-md)',
-          }}
-        >
-          <GripVertical className="w-3.5 h-3.5" />
-        </div>
-      )}
-      {isEditing && (
-        <div
-          className="absolute inset-0 z-10 rounded-3xl pointer-events-none"
-          style={{
-            border: '2px dashed var(--border-strong)',
-          }}
-        />
-      )}
-      <div>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 export default function DashboardPage() {
   const [status, setStatus] = useState<DoorStatus | null>(null);
@@ -121,6 +48,9 @@ export default function DashboardPage() {
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
   const autoLockRef = useRef(DEFAULT_AUTO_LOCK);
   const initialFetchDone = useRef(false);
+  const cardsSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cardsSyncIdleRef = useRef<number | null>(null);
+  const lastVisibilityRefreshRef = useRef(0);
 
   // ── Client-side auth guard — prevents stale Router Cache bypass ──
   useEffect(() => {
@@ -140,12 +70,6 @@ export default function DashboardPage() {
   }, []);
 
   const { layout, saveLayout, resetLayout, isEditing, setIsEditing } = useDashboardLayout();
-
-  // DnD sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
-  );
 
   // Start countdown when door unlocks
   const startCountdown = useCallback(() => {
@@ -240,6 +164,37 @@ export default function DashboardPage() {
       console.error('Failed to fetch status:', error);
       setApiError(true);
       setIsLoading(false);
+    }
+  }, []);
+
+  // Cards are secondary to the initial door status. Defer their ESP/DB sync
+  // until the first paint so iOS can display the dashboard without waiting.
+  const scheduleCardsSync = useCallback(() => {
+    if (cardsSyncTimerRef.current) clearTimeout(cardsSyncTimerRef.current);
+    if (cardsSyncIdleRef.current !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+      (window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(cardsSyncIdleRef.current);
+      cardsSyncIdleRef.current = null;
+    }
+
+    const run = () => {
+      cardsSyncTimerRef.current = null;
+      cardsSyncIdleRef.current = null;
+      syncCards();
+    };
+
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      const idle = (window as Window & { requestIdleCallback: (callback: () => void, options?: { timeout: number }) => number }).requestIdleCallback;
+      cardsSyncIdleRef.current = idle(run, { timeout: 1800 });
+      return;
+    }
+
+    cardsSyncTimerRef.current = setTimeout(run, 900);
+  }, [syncCards]);
+
+  useEffect(() => () => {
+    if (cardsSyncTimerRef.current) clearTimeout(cardsSyncTimerRef.current);
+    if (cardsSyncIdleRef.current !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+      (window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(cardsSyncIdleRef.current);
     }
   }, []);
 
@@ -364,23 +319,22 @@ export default function DashboardPage() {
   const { isConnected, deviceOnline, reconnect } = useWebSocket({
     onMessage: handleWebSocketMessage,
     onConnect: () => {
-      // Fetch initial status once, then MQTT provides real-time updates
-      if (!initialFetchDone.current) {
-        initialFetchDone.current = true;
-        fetchStatus();
-        syncCards();
-      }
+      // Initial status is fetched independently; MQTT only provides updates.
     },
     onDisconnect: () => {
       // MQTT connection lost
     },
   });
 
-  // Fetch initial status on mount (don't wait for MQTT)
+  // Fetch initial status once on mount (don't wait for MQTT). Secondary card
+  // synchronization is deliberately scheduled after the first paint.
   useEffect(() => {
-    fetchStatus();
-    syncCards();
-  }, [fetchStatus, syncCards]);
+    if (initialFetchDone.current) return;
+    initialFetchDone.current = true;
+    lastVisibilityRefreshRef.current = Date.now();
+    void fetchStatus();
+    scheduleCardsSync();
+  }, [fetchStatus, scheduleCardsSync]);
 
   // ── Manual retry handler ──
   const handleManualRetry = useCallback(() => {
@@ -392,23 +346,16 @@ export default function DashboardPage() {
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        fetchStatus();
-        syncCards();
+        const now = Date.now();
+        if (now - lastVisibilityRefreshRef.current < 1200) return;
+        lastVisibilityRefreshRef.current = now;
+        void fetchStatus();
+        scheduleCardsSync();
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [fetchStatus, syncCards]);
-
-  // ── DnD handlers ──
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      const oldIndex = layout.indexOf(active.id as string);
-      const newIndex = layout.indexOf(over.id as string);
-      saveLayout(arrayMove(layout, oldIndex, newIndex));
-    }
-  };
+  }, [fetchStatus, scheduleCardsSync]);
 
   // ── Derived state ──
   // Device is offline when MQTT says so, or when we couldn't fetch initial status
@@ -445,6 +392,21 @@ export default function DashboardPage() {
       <Header />
 
       <div className="px-4 md:px-8 pb-8">
+        {status && !isConnected && !isEspOffline && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-4 flex items-center gap-2 rounded-xl px-3 py-2 text-xs"
+            style={{
+              color: 'var(--warning)',
+              background: 'var(--warning-light)',
+              border: '1px solid color-mix(in srgb, var(--warning) 25%, transparent)',
+            }}
+          >
+            <span className="h-2 w-2 shrink-0 rounded-full animate-pulse" style={{ background: 'var(--warning)' }} />
+            Realtime connection is reconnecting. Device status will refresh automatically.
+          </div>
+        )}
         {/* ── Offline Screen — replaces dashboard when ESP32 is unreachable ── */}
         <AnimatePresence>
           {isEspOffline && (
@@ -598,28 +560,7 @@ export default function DashboardPage() {
         {isLoading ? (
           <DashboardSkeletons layout={layout} />
         ) : isEditing ? (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext items={layout} strategy={rectSortingStrategy}>
-              <MasonryGrid>
-                {layout.map((id, index) => (
-                  <SortableCard
-                    key={id}
-                    id={id}
-                    index={index}
-                    isEditing={isEditing}
-                  >
-                    <div className={id === 'door-controls' || id === 'device-tools' ? 'hidden md:block' : ''}>
-                      {renderCard(id)}
-                    </div>
-                  </SortableCard>
-                ))}
-              </MasonryGrid>
-            </SortableContext>
-          </DndContext>
+          <EditableDashboard layout={layout} renderCard={renderCard} onLayoutChange={saveLayout} />
         ) : (
           <MasonryGrid>
             {layout.map((id) => (
@@ -708,4 +649,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

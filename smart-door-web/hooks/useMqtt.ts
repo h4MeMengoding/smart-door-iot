@@ -7,8 +7,8 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import mqtt from 'mqtt';
-import { BROWSER_SUBSCRIBE_TOPICS, TOPICS } from '@/lib/mqttTopics';
+import type { MqttClient } from 'mqtt';
+import { TOPICS } from '@/lib/mqttTopics';
 import { MQTT_CONFIG } from '@/lib/config';
 import { WebSocketMessage } from '@/lib/types';
 
@@ -64,7 +64,7 @@ export function useMqtt(options: UseMqttOptions = {}) {
   const [isConnected, setIsConnected] = useState(false);
   const [deviceOnline, setDeviceOnline] = useState(false);
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
-  const clientRef = useRef<mqtt.MqttClient | null>(null);
+  const clientRef = useRef<MqttClient | null>(null);
   const mountedRef = useRef(false);
   const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -77,7 +77,7 @@ export function useMqtt(options: UseMqttOptions = {}) {
   useEffect(() => { onConnectRef.current = options.onConnect; }, [options.onConnect]);
   useEffect(() => { onDisconnectRef.current = options.onDisconnect; }, [options.onDisconnect]);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!mountedRef.current) return;
     if (clientRef.current?.connected) return;
 
@@ -87,6 +87,10 @@ export function useMqtt(options: UseMqttOptions = {}) {
     const creds = getMqttCredentials();
 
     try {
+      // Keep the sizeable MQTT client out of the critical dashboard bundle.
+      const { default: mqtt } = await import('mqtt');
+      if (!mountedRef.current || clientRef.current?.connected) return;
+
       const client = mqtt.connect(wsUrl, {
         username: creds.username,
         password: creds.password,
