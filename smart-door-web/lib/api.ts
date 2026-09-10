@@ -150,6 +150,16 @@ class ApiClient {
     return this.command<{ rfidDisabled: boolean; rfidAutoEnableMs?: number }>('rfid.status');
   }
 
+  // ── Touch Sensor Toggle ──
+
+  async toggleTouch(): Promise<{ success: boolean; touchDisabled: boolean; message: string }> {
+    return this.command('touch.toggle');
+  }
+
+  async getTouchStatus(): Promise<{ touchDisabled: boolean }> {
+    return this.command<{ touchDisabled: boolean }>('touch.status');
+  }
+
   // ── Scheduled Restart ──
 
   async getScheduledRestart(): Promise<ScheduledRestartConfig> {

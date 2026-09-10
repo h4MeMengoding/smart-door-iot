@@ -46,6 +46,7 @@ bool buzzerState = false;
 // TOUCH SENSOR STATE
 // ============================================
 
+bool touchDisabled = false;
 bool lastTouchState = false;
 unsigned long touchDebounceStart = 0;
 bool touchStable = false;

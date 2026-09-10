@@ -45,7 +45,7 @@ async function verifyToken(token: string): Promise<boolean> {
   return mismatch === 0;
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Prevent caching of protected pages — ensures middleware always runs

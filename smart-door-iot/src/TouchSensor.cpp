@@ -6,6 +6,10 @@
 // ============================================
 
 bool checkTouchSensor() {
+    if (touchDisabled) {
+        return false;
+    }
+
     unsigned long currentTime = millis();
     bool currentReading = digitalRead(TOUCH_PIN);
     

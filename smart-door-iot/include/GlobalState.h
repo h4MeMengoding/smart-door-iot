@@ -72,6 +72,7 @@ extern bool buzzerState;
 // TOUCH SENSOR STATE
 // ============================================
 
+extern bool touchDisabled;            // true = touch sensor ignores input (runtime-only)
 extern bool lastTouchState;
 extern unsigned long touchDebounceStart;
 extern bool touchStable;

@@ -46,6 +46,10 @@ const COMMAND_MAP: Record<string, { topic: string; action: string }> = {
   'rfid.toggle':        { topic: TOPICS.CMD_RFID, action: 'toggle' },
   'rfid.status':        { topic: TOPICS.CMD_RFID, action: 'status' },
   'rfid.disable_timed': { topic: TOPICS.CMD_RFID, action: 'disable_timed' },
+
+  // Touch sensor
+  'touch.toggle':        { topic: TOPICS.CMD_TOUCH, action: 'toggle' },
+  'touch.status':        { topic: TOPICS.CMD_TOUCH, action: 'status' },
   
   // System
   'system.info':    { topic: TOPICS.CMD_SYSTEM, action: 'info' },

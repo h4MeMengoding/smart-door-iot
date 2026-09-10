@@ -29,6 +29,7 @@ export const TOPICS = {
   CMD_CONFIG: 'smartdoor/cmd/config',
   CMD_MODE: 'smartdoor/cmd/mode',
   CMD_RFID: 'smartdoor/cmd/rfid',
+  CMD_TOUCH: 'smartdoor/cmd/touch',
   CMD_SYSTEM: 'smartdoor/cmd/system',
   CMD_TIME: 'smartdoor/cmd/time',
   CMD_SCHEDULE: 'smartdoor/cmd/schedule',
@@ -78,6 +79,7 @@ export interface MqttDoorStatus {
   autoLockDuration: number;
   rfidDisabled: boolean;
   rfidAutoEnableMs: number;
+  touchDisabled: boolean;
   ntpSynced: boolean;
   currentHour: number;
   currentTime?: string;

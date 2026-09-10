@@ -78,6 +78,10 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
  */
 export async function subscribeToPush(): Promise<boolean> {
   try {
+    if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+      return false;
+    }
+
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.warn('[Push] PushManager not supported');
       return false;
@@ -159,8 +163,11 @@ export async function subscribeToPush(): Promise<boolean> {
 
     console.log('[Push] Subscribed successfully');
     return true;
-  } catch (err) {
-    console.error('[Push] Subscription failed:', err);
+  } catch (err: unknown) {
+    const reason = err instanceof Error
+      ? `${err.name}: ${err.message}`
+      : String(err);
+    console.warn('[Push] Subscription unavailable:', reason);
     return false;
   }
 }

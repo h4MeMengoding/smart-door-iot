@@ -524,6 +524,38 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
         }
     }
     
+    // ── Touch Sensor Commands ──
+    else if (topicStr == TOPIC_CMD_TOUCH) {
+        String action = doc["action"] | "";
+
+        if (action == "toggle") {
+            touchDisabled = !touchDisabled;
+            lastEvent = touchDisabled ? "Touch sensor disabled (MQTT)" : "Touch sensor enabled (MQTT)";
+            publishDoorStatus();
+
+            StaticJsonDocument<256> resp;
+            resp["requestId"] = requestId;
+            resp["success"] = true;
+            resp["touchDisabled"] = touchDisabled;
+            resp["message"] = touchDisabled ? "Touch sensor disabled" : "Touch sensor enabled";
+            char buf[256];
+            serializeJson(resp, buf, sizeof(buf));
+            mqtt.publish(TOPIC_RESPONSE, buf);
+        }
+        else if (action == "status") {
+            StaticJsonDocument<192> resp;
+            resp["requestId"] = requestId;
+            resp["success"] = true;
+            resp["touchDisabled"] = touchDisabled;
+            char buf[192];
+            serializeJson(resp, buf, sizeof(buf));
+            mqtt.publish(TOPIC_RESPONSE, buf);
+        }
+        else {
+            sendResponse(requestId, false, "Unknown touch action");
+        }
+    }
+
     // ── System Commands ──
     else if (topicStr == TOPIC_CMD_SYSTEM) {
         String action = doc["action"] | "";
@@ -766,6 +798,7 @@ static void buildStatusJson(JsonDocument& doc) {
     doc["uptime"] = String(uptimeMs / 1000) + "s";
     doc["autoLockDuration"] = configuredAutoLockMs / 1000;
     doc["rfidDisabled"] = rfidDisabled;
+    doc["touchDisabled"] = touchDisabled;
     
     long rem = (long)(rfidAutoEnableTime - millis());
     doc["rfidAutoEnableMs"] = (rfidAutoEnableTime > 0 && rem > 0) ? rem : 0;
@@ -1037,6 +1070,7 @@ static bool mqttConnect() {
         mqtt.subscribe(TOPIC_CMD_CONFIG, 1);
         mqtt.subscribe(TOPIC_CMD_MODE, 1);
         mqtt.subscribe(TOPIC_CMD_RFID, 1);
+        mqtt.subscribe(TOPIC_CMD_TOUCH, 1);
         mqtt.subscribe(TOPIC_CMD_SYSTEM, 1);
         mqtt.subscribe(TOPIC_CMD_TIME, 1);
         mqtt.subscribe(TOPIC_CMD_SCHEDULE, 1);

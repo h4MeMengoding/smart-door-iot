@@ -36,6 +36,7 @@
 #define TOPIC_CMD_CONFIG        "smartdoor/cmd/config"
 #define TOPIC_CMD_MODE          "smartdoor/cmd/mode"
 #define TOPIC_CMD_RFID          "smartdoor/cmd/rfid"
+#define TOPIC_CMD_TOUCH         "smartdoor/cmd/touch"
 #define TOPIC_CMD_SYSTEM        "smartdoor/cmd/system"
 #define TOPIC_CMD_TIME          "smartdoor/cmd/time"
 #define TOPIC_CMD_SCHEDULE      "smartdoor/cmd/schedule"

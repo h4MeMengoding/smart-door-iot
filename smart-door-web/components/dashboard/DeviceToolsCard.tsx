@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import {
   Plus, X, CreditCard, Loader2,
   Upload, FileUp, CheckCircle, XCircle, AlertTriangle,
-  Power, RotateCcw, Wrench, Copy, WifiOff, Clock,
+  Power, RotateCcw, Wrench, Copy, WifiOff, Clock, Hand,
 } from 'lucide-react';
 import { DoorStatus } from '@/lib/types';
 import { api } from '@/lib/api';
@@ -15,7 +15,7 @@ import { dashboardEvents } from '@/lib/dashboardEvents';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
-type ActivePanel = null | 'add-card' | 'ota' | 'restart' | 'clone' | 'rfid-toggle';
+type ActivePanel = null | 'add-card' | 'ota' | 'restart' | 'clone' | 'rfid-toggle' | 'touch-toggle';
 type OtaState = 'idle' | 'selected' | 'uploading' | 'flashing' | 'success' | 'error';
 type RestartState = 'idle' | 'confirming' | 'restarting' | 'success';
 type CloneUiState = 'idle' | 'wait-source' | 'wait-target' | 'success' | 'failed' | 'timeout';
@@ -38,6 +38,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
   const [otaFile, setOtaFile] = useState<File | null>(null);
   const [otaProgress, setOtaProgress] = useState(0);
   const [otaError, setOtaError] = useState('');
+  const [isOtaDragging, setIsOtaDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
 
@@ -57,6 +58,10 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
   const [rfidTimerMinutes, setRfidTimerMinutes] = useState(5);
   const [rfidCountdownMs, setRfidCountdownMs] = useState(0);
   const rfidCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // --- Touch Sensor state (runtime-only; resets enabled after reboot) ---
+  const [touchDisabled, setTouchDisabled] = useState(status?.touchDisabled ?? false);
+  const [isTogglingTouch, setIsTogglingTouch] = useState(false);
 
   // --- Schedule Restart state ---
   // Active schedule as reported from ESP32
@@ -104,6 +109,13 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
       setRfidCountdownMs(0);
     }
   }, [status?.rfidDisabled, status?.rfidAutoEnableMs]);
+
+  // Sync touchDisabled from ESP32 status
+  useEffect(() => {
+    if (status?.touchDisabled !== undefined) {
+      setTouchDisabled(status.touchDisabled);
+    }
+  }, [status?.touchDisabled]);
 
   // Local countdown ticker
   useEffect(() => {
@@ -235,8 +247,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
     if (xhrRef.current) { xhrRef.current.abort(); xhrRef.current = null; }
   }, []);
 
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
+  const handleOtaFile = useCallback((selected?: File) => {
     if (!selected) return;
     if (!selected.name.endsWith('.bin')) { setOtaError('Only .bin firmware files are allowed'); setOtaState('error'); return; }
     if (selected.size > MAX_FILE_SIZE) { setOtaError(`File too large (${(selected.size / 1024 / 1024).toFixed(1)}MB). Max 2MB.`); setOtaState('error'); return; }
@@ -245,6 +256,38 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
     setOtaError('');
     setOtaState('selected');
   }, []);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    handleOtaFile(e.target.files?.[0]);
+  }, [handleOtaFile]);
+
+  const handleOtaDragEnter = useCallback((e: React.DragEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsOtaDragging(true);
+  }, []);
+
+  const handleOtaDragOver = useCallback((e: React.DragEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsOtaDragging(true);
+  }, []);
+
+  const handleOtaDragLeave = useCallback((e: React.DragEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+      setIsOtaDragging(false);
+    }
+  }, []);
+
+  const handleOtaDrop = useCallback((e: React.DragEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsOtaDragging(false);
+    handleOtaFile(e.dataTransfer.files?.[0]);
+  }, [handleOtaFile]);
 
   const handleOtaUpload = useCallback(() => {
     if (!otaFile) return;
@@ -349,6 +392,25 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
       toast.error('Failed to communicate with device');
     } finally {
       setIsTogglingRfid(false);
+    }
+  };
+
+  // ── Touch Sensor Toggle handlers ──
+  const handleToggleTouch = async () => {
+    setIsTogglingTouch(true);
+    try {
+      const result = await api.toggleTouch();
+      if (result.success) {
+        setTouchDisabled(result.touchDisabled);
+        toast.success(result.message);
+        logSystemEvent('touch_toggled', result.touchDisabled ? 'Touch sensor disabled' : 'Touch sensor enabled');
+      } else {
+        toast.error('Failed to toggle touch sensor');
+      }
+    } catch {
+      toast.error('Failed to communicate with device');
+    } finally {
+      setIsTogglingTouch(false);
     }
   };
 
@@ -639,6 +701,28 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
               <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ background: 'var(--danger)' }} />
             )}
           </button>
+
+          <button
+            onClick={() => togglePanel('touch-toggle')}
+            className="flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all relative"
+            style={{
+              background: activePanel === 'touch-toggle'
+                ? (touchDisabled ? 'var(--danger-light)' : 'var(--primary-light)')
+                : 'var(--bg-surface-hover)',
+              border: `1px solid ${activePanel === 'touch-toggle'
+                ? (touchDisabled ? 'var(--danger)' : 'var(--primary)')
+                : 'var(--border)'}`,
+              color: activePanel === 'touch-toggle'
+                ? (touchDisabled ? 'var(--danger)' : 'var(--primary)')
+                : 'var(--text-secondary)',
+            }}
+          >
+            <Hand className="w-4 h-4" />
+            <span className="text-[11px] font-medium">Touch</span>
+            {touchDisabled && (
+              <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ background: 'var(--danger)' }} />
+            )}
+          </button>
         </div>
 
         {/* Detail Panels */}
@@ -716,13 +800,25 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                     {!otaFile ? (
                       <button
                         onClick={() => fileInputRef.current?.click()}
+                        onDragEnter={handleOtaDragEnter}
+                        onDragOver={handleOtaDragOver}
+                        onDragLeave={handleOtaDragLeave}
+                        onDrop={handleOtaDrop}
+                        aria-label="Select or drop .bin firmware file"
                         className="w-full flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-dashed transition-colors"
-                        style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+                        style={{
+                          borderColor: isOtaDragging ? 'var(--primary)' : 'var(--border)',
+                          background: isOtaDragging ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : 'transparent',
+                          color: isOtaDragging ? 'var(--primary)' : 'var(--text-muted)',
+                        }}
                         onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.background = 'color-mix(in srgb, var(--primary) 5%, transparent)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'transparent'; }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = isOtaDragging ? 'var(--primary)' : 'var(--border)';
+                          e.currentTarget.style.background = isOtaDragging ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : 'transparent';
+                        }}
                       >
                         <FileUp className="w-5 h-5" />
-                        <span className="text-xs font-medium">Select .bin firmware file</span>
+                        <span className="text-xs font-medium">{isOtaDragging ? 'Drop .bin firmware file here' : 'Select or drop .bin firmware file'}</span>
                       </button>
                     ) : (
                       <div className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
@@ -1218,6 +1314,59 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
                 <div className="flex items-start gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
                   <span>When disabled, the device will beep 5 times rapidly. Permanent disable persists across restarts.</span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ── Touch Sensor Toggle Panel ── */}
+          {activePanel === 'touch-toggle' && (
+            <motion.div
+              key="touch-toggle"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div
+                className="p-3.5 rounded-xl space-y-3"
+                style={{ background: 'var(--bg-surface-hover)', border: '1px solid var(--border)' }}
+              >
+                <div className="flex items-start gap-2 p-2.5 rounded-xl" style={{
+                  background: touchDisabled ? 'var(--danger-light)' : 'var(--success-light)',
+                }}>
+                  <Hand className="w-4 h-4 shrink-0 mt-0.5" style={{
+                    color: touchDisabled ? 'var(--danger)' : 'var(--success)',
+                  }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold" style={{
+                      color: touchDisabled ? 'var(--danger-text)' : 'var(--success-text)',
+                    }}>
+                      Touch sensor is {touchDisabled ? 'DISABLED' : 'ENABLED'}
+                    </p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      {touchDisabled
+                        ? 'Touch input is ignored until enabled again.'
+                        : 'Touch input is active and can unlock the door.'}
+                    </p>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={handleToggleTouch}
+                  isLoading={isTogglingTouch}
+                  variant={touchDisabled ? 'primary' : 'danger'}
+                  size="sm"
+                  className="w-full"
+                >
+                  <Hand className="w-3.5 h-3.5 mr-1.5" />
+                  {touchDisabled ? 'Enable Touch' : 'Disable Touch'}
+                </Button>
+
+                <div className="flex items-start gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                  <span>This setting is temporary and returns to enabled after an ESP32 reboot or OTA update.</span>
                 </div>
               </div>
             </motion.div>
