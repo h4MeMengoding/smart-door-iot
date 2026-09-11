@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, Suspense, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Lock, AlertCircle, Loader2, Eye, EyeOff,
@@ -203,7 +203,6 @@ function LoginContent() {
   });
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const hiddenInputRef = useRef<HTMLInputElement>(null);
 
   // ── Fetch system stats ──
   useEffect(() => {

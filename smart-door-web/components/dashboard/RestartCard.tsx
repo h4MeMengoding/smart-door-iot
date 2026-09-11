@@ -20,7 +20,6 @@ export function RestartCard() {
   type PendingSchedule = { mode: number; hour: number; interval?: number };
   const [pendingSchedule, setPendingSchedule] = useState<PendingSchedule | null>(null);
   const [showSchedulePicker, setShowSchedulePicker] = useState(false);
-  const [isLoadingSchedule, setIsLoadingSchedule] = useState(true);
   const [isSavingSchedule, setIsSavingSchedule] = useState(false);
   const [countdown, setCountdown] = useState<string | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -30,9 +29,7 @@ export function RestartCard() {
     try {
       const config = await api.getScheduledRestart();
       setSchedule(config);
-      setIsLoadingSchedule(false);
     } catch {
-      setIsLoadingSchedule(false);
     }
   }, []);
 
@@ -52,7 +49,6 @@ export function RestartCard() {
     const updateCountdown = async () => {
       try {
         const espTime = await api.getEspTime();
-        const now = new Date(espTime.epoch * 1000);
         const currentHour = espTime.hour;
         const currentMin = espTime.minute;
         const currentSec = espTime.second;

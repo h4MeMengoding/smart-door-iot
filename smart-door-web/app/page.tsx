@@ -9,9 +9,6 @@ import { DoorControls } from '@/components/dashboard/DoorControls';
 import { SystemInfoCard } from '@/components/dashboard/SystemInfoCard';
 import { CardsSection } from '@/components/dashboard/CardsSection';
 import { LogsSection } from '@/components/dashboard/LogsSection';
-import { AddCardSection } from '@/components/dashboard/AddCardSection';
-import { OtaUpdateCard } from '@/components/dashboard/OtaUpdateCard';
-import { RestartCard } from '@/components/dashboard/RestartCard';
 import { DeviceToolsCard } from '@/components/dashboard/DeviceToolsCard';
 import { AutoLockCard } from '@/components/dashboard/AutoLockCard';
 import { CardDelayCard } from '@/components/dashboard/CardDelayCard';
@@ -44,6 +41,7 @@ export default function DashboardPage() {
   const [logsModalOpen, setLogsModalOpen] = useState(false);
   const [arrangeModalOpen, setArrangeModalOpen] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [autoLockDuration, setAutoLockDuration] = useState(DEFAULT_AUTO_LOCK);
   const prevStatusRef = useRef<DoorStatus | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
   const autoLockRef = useRef(DEFAULT_AUTO_LOCK);
@@ -159,6 +157,7 @@ export default function DashboardPage() {
       setIsLoading(false);
       if (data.autoLockDuration) {
         autoLockRef.current = data.autoLockDuration;
+        setAutoLockDuration(data.autoLockDuration);
       }
     } catch (error) {
       console.error('Failed to fetch status:', error);
@@ -205,6 +204,7 @@ export default function DashboardPage() {
       // Track auto-lock duration from ESP32
       if (newStatus.autoLockDuration) {
         autoLockRef.current = newStatus.autoLockDuration;
+        setAutoLockDuration(newStatus.autoLockDuration);
       }
 
       if (prevStatusRef.current) {
@@ -253,7 +253,7 @@ export default function DashboardPage() {
 
     } else if (message.type === 'card_added' && message.data) {
       // ── Instant card added ──
-      const { uid, allCards } = message.data;
+      const { uid, allCards } = message.data as { uid: string; allCards: string[] };
       toast.success(`Card registered: ${uid}`);
       sendLocalNotification('card_registered', 'Card Registered', `New card added: ${uid}`, 'card-registered');
       // Instantly update UI with full card list from ESP
@@ -263,7 +263,7 @@ export default function DashboardPage() {
 
     } else if (message.type === 'card_removed' && message.data) {
       // ── Instant card removed ──
-      const { uid, allCards } = message.data;
+      const { uid, allCards } = message.data as { uid: string; allCards: string[] };
       toast.success(`Card removed: ${uid}`);
       sendLocalNotification('card_removed', 'Card Removed', `Card removed: ${uid}`, 'card-removed');
       // Instantly update UI with full card list from ESP
@@ -273,7 +273,7 @@ export default function DashboardPage() {
 
     } else if (message.type === 'registration_mode' && message.data) {
       // ── Registration mode toggle ──
-      const { active } = message.data;
+      const { active } = message.data as { active: boolean };
       if (active) {
         toast('Registration mode activated — tap card to register', { icon: '📝', duration: 4000 });
       } else {
@@ -282,7 +282,7 @@ export default function DashboardPage() {
       dashboardEvents.emit('state-changed');
 
     } else if (message.type === 'card_scan' && message.data) {
-      const { uid, success } = message.data;
+      const { uid, success } = message.data as { uid: string; success: boolean };
       if (!success) {
         toast.error(`Access denied: ${uid}`);
         sendLocalNotification('rfid_denied', 'Access Denied', `Unauthorized card: ${uid}`, 'rfid-denied');
@@ -295,7 +295,7 @@ export default function DashboardPage() {
 
     } else if (message.type === 'clone_status' && message.data) {
       // ── Clone status update — relay to DeviceToolsCard via event bus ──
-      dashboardEvents.emit('clone-status', message.data);
+      dashboardEvents.emit('clone-status', message.data as { state?: string; step?: string; sourceUID?: string; result?: string });
 
     } else if (message.type === 'access_log' && message.data) {
       // ── Access log from ESP32 — persist to DB and trigger UI refresh ──
@@ -332,7 +332,7 @@ export default function DashboardPage() {
     if (initialFetchDone.current) return;
     initialFetchDone.current = true;
     lastVisibilityRefreshRef.current = Date.now();
-    void fetchStatus();
+    setTimeout(() => { void fetchStatus(); }, 0);
     scheduleCardsSync();
   }, [fetchStatus, scheduleCardsSync]);
 
@@ -365,7 +365,7 @@ export default function DashboardPage() {
   const renderCard = (id: string): ReactNode => {
     switch (id) {
       case 'door-status':
-        return <DoorStatusCard status={status} isLoading={isLoading} apiError={apiError} countdown={countdown} autoLockDuration={status?.autoLockDuration || autoLockRef.current} />;
+        return <DoorStatusCard status={status} isLoading={isLoading} apiError={apiError} countdown={countdown} autoLockDuration={status?.autoLockDuration || autoLockDuration} />;
       case 'system-info':
         return <SystemInfoCard uptimeRaw={status?.uptime} isConnected={isConnected} sysInfo={sysInfo} />;
       case 'door-controls':

@@ -1,11 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCards, addCard, removeCard, updateCardName, addSystemEvent } from '@/lib/db';
 import { isMasterCardUid } from '@/lib/utils';
+import { requireApiAccess } from '@/lib/apiAuth';
 
 export const dynamic = 'force-dynamic';
 
+function getErrorDetails(error: unknown): { code?: string; message?: string } {
+  if (!error || typeof error !== 'object') return {};
+  const value = error as { code?: unknown; message?: unknown };
+  return {
+    code: typeof value.code === 'string' ? value.code : undefined,
+    message: typeof value.message === 'string' ? value.message : undefined,
+  };
+}
+
 // GET /api/cards - Get all cards
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const cards = await getCards();
 
@@ -31,6 +43,8 @@ export async function GET() {
 
 // POST /api/cards - Add new card (protected by middleware session check)
 export async function POST(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
     const { uid, nickname } = body;
@@ -57,11 +71,12 @@ export async function POST(request: NextRequest) {
         addedAt: card.createdAt.toISOString(),
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error adding card:', error);
+    const details = getErrorDetails(error);
 
     const isUniqueViolation =
-      error?.code === 'P2002' || error?.message?.includes('Unique constraint');
+      details.code === 'P2002' || details.message?.includes('Unique constraint');
 
     return NextResponse.json(
       { success: false, message: isUniqueViolation ? 'Card already exists' : 'Internal server error' },
@@ -72,6 +87,8 @@ export async function POST(request: NextRequest) {
 
 // DELETE /api/cards - Remove card (protected by middleware session check)
 export async function DELETE(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
     const { uid } = body;
@@ -91,10 +108,11 @@ export async function DELETE(request: NextRequest) {
     } catch { /* non-critical */ }
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error removing card:', error);
+    const details = getErrorDetails(error);
 
-    const isNotFound = error?.code === 'P2025';
+    const isNotFound = details.code === 'P2025';
     return NextResponse.json(
       { success: false, message: isNotFound ? 'Card not found' : 'Internal server error' },
       { status: isNotFound ? 404 : 500 }
@@ -104,6 +122,8 @@ export async function DELETE(request: NextRequest) {
 
 // PUT /api/cards - Update card displayName (protected by middleware session check)
 export async function PUT(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
     const { uid, nickname, displayName } = body;
@@ -133,10 +153,11 @@ export async function PUT(request: NextRequest) {
         addedAt: card.createdAt.toISOString(),
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error updating card:', error);
+    const details = getErrorDetails(error);
 
-    const isNotFound = error?.code === 'P2025';
+    const isNotFound = details.code === 'P2025';
     return NextResponse.json(
       { success: false, message: isNotFound ? 'Card not found' : 'Internal server error' },
       { status: isNotFound ? 404 : 500 }

@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getSystemEvents, addSystemEvent } from '@/lib/db';
 import { prisma } from '@/lib/prisma';
+import { NextRequest } from 'next/server';
+import { requireApiAccess } from '@/lib/apiAuth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     // Cleanup events older than 3 days
     const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
@@ -41,7 +45,9 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
     const { eventType, description } = body;

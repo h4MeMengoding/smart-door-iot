@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSystemConfig, setSystemConfig, getCardDelays, upsertCardDelay, deleteCardDelay, getCardDelaySchedules, upsertCardDelaySchedule, deleteCardDelaySchedule, deleteAllCardDelaySchedules, bulkUpsertCardDelaySchedule, setCardDelayEnabled, bulkSetCardDelayEnabled } from '@/lib/db';
+import { requireApiAccess } from '@/lib/apiAuth';
 
 export const dynamic = 'force-dynamic';
 
 // GET /api/config - Get all system config
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     // Parallel fetch — all queries run simultaneously
     const [autoLockStr, cardDelays, cardSchedules] = await Promise.all([
@@ -42,6 +45,8 @@ export async function GET() {
 
 // PUT /api/config - Update system config (auth handled by Cloudflare Access)
 export async function PUT(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
     const { autoLockDuration, cardDelay, cardSchedule, bulkSchedule, removeSchedule, enableDelay, bulkEnableDelay } = body;

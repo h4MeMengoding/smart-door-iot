@@ -9,10 +9,15 @@
  * tapi langsung mengirim satu heartbeat lalu menutup stream.
  */
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+import { NextRequest } from 'next/server';
+import { requireApiAccess } from '@/lib/apiAuth';
+
+export async function GET(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({

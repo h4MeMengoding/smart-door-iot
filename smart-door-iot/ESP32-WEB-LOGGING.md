@@ -10,7 +10,7 @@
 #define WEB_SERVER_ENABLED  true                    // Enable logging to web server
 #define WEB_SERVER_IP       "10.10.1.100"          // IP komputer yang menjalankan Next.js
 #define WEB_SERVER_PORT     3000                    // Port Next.js (default: 3000)
-#define WEB_API_KEY         "Ayamgeprek102938"     // Sama dengan ESP32_API_KEY di .env.local
+#define WEB_API_KEY         "<your-api-key>"       // Set only in local firmware config
 #define WEB_LOG_ENDPOINT    "/api/logs"
 #define WEB_CARD_ENDPOINT   "/api/cards"
 ```

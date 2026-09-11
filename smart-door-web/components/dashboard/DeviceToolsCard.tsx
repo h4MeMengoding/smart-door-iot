@@ -177,7 +177,7 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
           const currentMin = espTime.minute;
           const currentSec = espTime.second;
           // at_hour mode: compute next occurrence of hour (wall clock)
-          let target = schedActiveHour;
+          const target = schedActiveHour;
           let hoursUntil = target - currentHour;
           if (hoursUntil < 0) hoursUntil += 24;
           secondsUntil = hoursUntil * 3600 - currentMin * 60 - currentSec;
@@ -419,34 +419,6 @@ export function DeviceToolsCard({ status }: DeviceToolsCardProps) {
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
-  // ── Schedule Restart handlers ──
-  const handleSaveScheduleRestart = async () => {
-    setIsSavingSched(true);
-    try {
-      const payload = { mode: draftMode, hour: draftHour, interval: draftInterval ?? 0 };
-      const result = await api.setScheduledRestart(payload);
-      if (result.success) {
-        setSchedActiveMode(payload.mode);
-        setSchedActiveHour(payload.hour);
-        setSchedActiveInterval(payload.interval);
-        setSchedEditing(false);
-        const desc = payload.mode === 0
-          ? 'Scheduled restart disabled'
-          : payload.mode === 1
-          ? `Restart scheduled at ${payload.hour}:00 daily`
-          : `Restart every ${payload.interval} hours`;
-        toast.success(desc);
-        logSystemEvent('scheduled_restart', desc);
-      } else {
-        toast.error('Failed to save schedule');
-      }
-    } catch {
-      toast.error('Failed to save schedule');
-    } finally {
-      setIsSavingSched(false);
-    }
   };
 
   const handleCancelSchedule = async () => {

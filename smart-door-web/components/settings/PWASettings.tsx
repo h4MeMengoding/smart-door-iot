@@ -329,7 +329,8 @@ export function NotificationPreferencesSection() {
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
 
   useEffect(() => {
-    setPermission(getNotificationPermission());
+    const timer = setTimeout(() => setPermission(getNotificationPermission()), 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleToggle = useCallback((key: NotificationType) => {

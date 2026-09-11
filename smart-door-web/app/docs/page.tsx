@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { ArrowLeft, Copy, Check, ChevronRight, Menu, X } from 'lucide-react';
+import { ArrowLeft, Copy, Check, Menu, X } from 'lucide-react';
 import Link from 'next/link';
 
 interface TocItem {

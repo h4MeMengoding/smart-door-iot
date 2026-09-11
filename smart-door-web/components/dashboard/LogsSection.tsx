@@ -26,7 +26,7 @@ function getLogIcon(log: AccessLog) {
   );
 }
 
-function getActionBadge(action: string, success: boolean) {
+function getActionBadge(action: string) {
   if (action === 'registered') {
     return (
       <span
@@ -129,7 +129,7 @@ export function LogsSection({ onExpand }: LogsSectionProps) {
                           ? 'Touch'
                           : log.cardNickname || formatUid(log.cardUid || '')}
                     </span>
-                    {getActionBadge(log.action, log.success)}
+                    {getActionBadge(log.action)}
                   </div>
                   <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
                     {formatTimestamp(log.timestamp)}

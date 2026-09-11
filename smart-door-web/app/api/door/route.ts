@@ -7,17 +7,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendCommand, getCachedStatus, isDeviceOnline, initMqtt } from '@/lib/mqtt';
 import { TOPICS } from '@/lib/mqttTopics';
+import { requireApiAccess } from '@/lib/apiAuth';
 
 export const dynamic = 'force-dynamic';
 
-// Verify API key (for iOS Shortcuts) — dashboard auth handled by Cloudflare Access
-function verifyApiKey(request: NextRequest): boolean {
-  const apiKey = request.headers.get('X-API-Key') || request.headers.get('x-api-key');
-  return !!(apiKey && apiKey === process.env.ESP32_API_KEY);
-}
-
 export async function GET(request: NextRequest) {
-  // Auth handled by Cloudflare Access (or API key for iOS Shortcuts)
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   initMqtt();
 
   // Return cached status if available, otherwise request from ESP32
@@ -56,7 +52,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  // Auth handled by Cloudflare Access (or API key for iOS Shortcuts)
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   initMqtt();
 
   try {

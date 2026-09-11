@@ -8,7 +8,7 @@ File `.env.local` sudah dibuat dengan konfigurasi berikut:
 
 ```env
 # ESP32 API Configuration
-ESP32_API_KEY=Ayamgeprek102938
+ESP32_API_KEY=<set-in-private-env>
 
 # ESP32 Default Configuration
 NEXT_PUBLIC_ESP32_IP=10.10.1.5
@@ -28,7 +28,7 @@ Mengirim access log dari ESP32 ke server.
 **Headers:**
 ```
 Content-Type: application/json
-X-API-Key: Ayamgeprek102938
+X-API-Key: <your-api-key>
 ```
 
 **Body:**
@@ -79,7 +79,7 @@ Menambah kartu baru.
 **Headers:**
 ```
 Content-Type: application/json
-X-API-Key: Ayamgeprek102938
+X-API-Key: <your-api-key>
 ```
 
 **Body:**
@@ -116,7 +116,7 @@ Di file `config.h` ESP32, tambahkan konfigurasi berikut:
 // Web Server Logging
 #define WEB_SERVER_IP       "10.10.1.xxx"    // IP komputer yang menjalankan Next.js
 #define WEB_SERVER_PORT     3000              // Port Next.js (default: 3000)
-#define WEB_API_KEY         "Ayamgeprek102938"
+#define WEB_API_KEY         "<your-api-key>"
 #define WEB_API_ENDPOINT    "/api/logs"
 ```
 
@@ -165,7 +165,7 @@ void APIHandler::sendLogToServer(const char* cardUid, const char* action, bool s
    ```bash
    curl -X POST http://localhost:3000/api/logs \
      -H "Content-Type: application/json" \
-     -H "X-API-Key: Ayamgeprek102938" \
+     -H "X-API-Key: <your-api-key>" \
      -d '{
        "cardUid": "BE:02:28:DB",
        "action": "unlock",

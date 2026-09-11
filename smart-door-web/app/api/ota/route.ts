@@ -6,14 +6,17 @@
 // 2. Forwards firmware binary as multipart upload
 
 import { NextRequest, NextResponse } from 'next/server';
+import { requireApiAccess } from '@/lib/apiAuth';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const ESP32_OTA_URL = process.env.ESP32_OTA_URL || 'https://esp.ilhame.id/ota';
 const ESP32_OTA_PASSWORD = process.env.ESP32_OTA_PASSWORD || '';
 
 export async function POST(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const formData = await request.formData();
     const file = formData.get('firmware') as File;

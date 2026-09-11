@@ -1,0 +1,22 @@
+// Copy this file to config.local.h and replace every CHANGE_ME value.
+// config.local.h is ignored by Git and must never be committed.
+
+#define MASTER_CARD_SIZE 4
+#define MASTER_CARD_BYTE_0 0x00
+#define MASTER_CARD_BYTE_1 0x00
+#define MASTER_CARD_BYTE_2 0x00
+#define MASTER_CARD_BYTE_3 0x00
+
+#define WIFI_SSID "CHANGE_ME_WIFI_SSID"
+#define WIFI_PASSWORD "CHANGE_ME_WIFI_PASSWORD"
+
+#define OTA_PASSWORD "CHANGE_ME_OTA_PASSWORD"
+#define OTA_WEB_USERNAME "admin"
+#define OTA_WEB_PASSWORD "CHANGE_ME_OTA_WEB_PASSWORD"
+
+#define MQTT_SERVER "mqtt.example.com"
+#define MQTT_USERNAME "CHANGE_ME_MQTT_USERNAME"
+#define MQTT_PASSWORD "CHANGE_ME_MQTT_PASSWORD"
+#define MQTT_CLIENT_ID "smartdoor-esp32"
+
+#define API_KEY "CHANGE_ME_API_KEY"

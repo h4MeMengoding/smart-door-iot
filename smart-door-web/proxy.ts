@@ -4,7 +4,12 @@ const SESSION_COOKIE = 'smart-door-session';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function getSecret(): string {
-  return process.env.AUTH_SECRET || process.env.VAPID_PRIVATE_KEY || 'smart-door-default-secret';
+  const secret = process.env.AUTH_SECRET || process.env.VAPID_PRIVATE_KEY;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('AUTH_SECRET must be configured in production');
+  }
+  return 'development-only-secret';
 }
 
 async function hmacSign(data: string): Promise<string> {
@@ -102,4 +107,3 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: ['/', '/docs/:path*'],
 };
-

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 
 const STORAGE_KEY = 'dashboard_layout';
 
@@ -16,26 +16,23 @@ const DEFAULT_LAYOUT = [
   'logs',
 ];
 
-export function useDashboardLayout() {
-  const [layout, setLayout] = useState<string[]>(DEFAULT_LAYOUT);
-  const [isEditing, setIsEditing] = useState(false);
+function getInitialLayout(): string[] {
+  if (typeof window === 'undefined') return DEFAULT_LAYOUT;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return DEFAULT_LAYOUT;
+    const parsed: string[] = JSON.parse(saved);
+    const newCards = DEFAULT_LAYOUT.filter((id) => !parsed.includes(id));
+    const validSaved = parsed.filter((id) => DEFAULT_LAYOUT.includes(id));
+    return [...validSaved, ...newCards];
+  } catch {
+    return DEFAULT_LAYOUT;
+  }
+}
 
-  // Load saved layout from localStorage
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed: string[] = JSON.parse(saved);
-        // Merge: keep saved order, append any new cards not in saved layout
-        const newCards = DEFAULT_LAYOUT.filter((id) => !parsed.includes(id));
-        // Remove cards that no longer exist
-        const validSaved = parsed.filter((id) => DEFAULT_LAYOUT.includes(id));
-        setLayout([...validSaved, ...newCards]);
-      }
-    } catch {
-      // Use default layout
-    }
-  }, []);
+export function useDashboardLayout() {
+  const [layout, setLayout] = useState<string[]>(getInitialLayout);
+  const [isEditing, setIsEditing] = useState(false);
 
   const saveLayout = useCallback((newLayout: string[]) => {
     setLayout(newLayout);

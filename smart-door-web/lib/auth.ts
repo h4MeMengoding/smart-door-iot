@@ -8,7 +8,12 @@ const LOCKOUT_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
 // Secret for HMAC signing — derived from VAPID private key or a dedicated env var
 function getSecret(): string {
-  return process.env.AUTH_SECRET || process.env.VAPID_PRIVATE_KEY || 'smart-door-default-secret';
+  const secret = process.env.AUTH_SECRET || process.env.VAPID_PRIVATE_KEY;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('AUTH_SECRET must be configured in production');
+  }
+  return 'development-only-secret';
 }
 
 // ─── HMAC Signing (Edge-compatible, uses Web Crypto) ───
@@ -197,4 +202,3 @@ export async function isAuthenticated(): Promise<boolean> {
 
   return verifySessionToken(token);
 }
-

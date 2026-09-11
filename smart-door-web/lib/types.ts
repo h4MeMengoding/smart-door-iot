@@ -99,6 +99,6 @@ export interface Settings {
 
 export interface WebSocketMessage {
   type: 'door_status' | 'card_scan' | 'system_info' | 'error' | 'card_added' | 'card_removed' | 'registration_mode' | 'clone_status' | 'access_log';
-  data: any;
+  data: unknown;
   timestamp: number;
 }

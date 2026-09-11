@@ -3,7 +3,17 @@
  * Digunakan untuk push log baru ke SSE clients tanpa polling.
  */
 
-type LogListener = (log: any) => void;
+export interface AccessLogEvent {
+  id: string;
+  timestamp: string;
+  cardUid: string | null;
+  action: string;
+  success: boolean;
+  accessType: string;
+  cardNickname?: string;
+}
+
+type LogListener = (log: AccessLogEvent) => void;
 
 class LogEventEmitter {
   private listeners = new Set<LogListener>();
@@ -15,7 +25,7 @@ class LogEventEmitter {
     };
   }
 
-  emit(log: any) {
+  emit(log: AccessLogEvent) {
     for (const listener of this.listeners) {
       try {
         listener(log);

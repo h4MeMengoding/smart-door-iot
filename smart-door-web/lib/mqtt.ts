@@ -8,7 +8,6 @@
 import mqtt from 'mqtt';
 import { TOPICS, SERVER_SUBSCRIBE_TOPICS, MqttCommandResponse, MqttAccessLogEvent } from './mqttTopics';
 import { MQTT_CONFIG } from './config';
-import { dashboardEvents } from './dashboardEvents';
 
 // ── Configuration ──
 
@@ -383,7 +382,7 @@ async function processAccessLog(event: MqttAccessLogEvent) {
         accessType: accessType as 'RFID' | 'WEB' | 'TOUCH',
       });
     }
-  } catch (err) {
+  } catch {
     // Ignore
   }
 
@@ -391,7 +390,7 @@ async function processAccessLog(event: MqttAccessLogEvent) {
   try {
     const { addSystemEvent } = await import('./db');
     await addSystemEvent(event.success ? 'access_granted' : 'access_denied', `Card ${event.cardUid || 'unknown'} - ${event.action} (${event.accessType})`);
-  } catch (err) {
+  } catch {
     // Non-critical
   }
 }

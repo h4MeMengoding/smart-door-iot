@@ -4,7 +4,7 @@
 # Usage: ./test-api.sh
 
 API_URL="http://localhost:3000/api"
-API_KEY="Ayamgeprek102938"
+API_KEY="${ESP32_API_KEY:?Set ESP32_API_KEY in your private shell}"
 
 echo "🧪 Testing ESP32 Web Logging API"
 echo "================================"

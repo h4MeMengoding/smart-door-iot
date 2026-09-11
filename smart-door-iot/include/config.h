@@ -1,6 +1,12 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// Machine-specific credentials belong in the ignored config.local.h file.
+// Copy config.local.h.example before building a real device.
+#if __has_include("config.local.h")
+#include "config.local.h"
+#endif
+
 // ============================================
 // 📌 PIN DEFINITIONS (DO NOT CHANGE - from wiring.md)
 // ============================================
@@ -31,13 +37,21 @@
 // Jumlah master cards yang diizinkan
 #define MAX_MASTER_CARDS 1
 
+#ifndef MASTER_CARD_SIZE
+#define MASTER_CARD_SIZE 4
+#define MASTER_CARD_BYTE_0 0x00
+#define MASTER_CARD_BYTE_1 0x00
+#define MASTER_CARD_BYTE_2 0x00
+#define MASTER_CARD_BYTE_3 0x00
+#endif
+
 // Master Card UIDs (Hardcoded)
 // Format: {size, uid_bytes...}
 // Example: 4-byte UID = {4, 0xDE, 0xAD, 0xBE, 0xEF}
 // Cara mendapatkan UID: Upload code, tap kartu, lihat Serial Monitor
 
 const byte MASTER_CARDS[MAX_MASTER_CARDS][8] = {
-    {4, 0x71, 0x0F, 0x8A, 0xE6, 0x00, 0x00, 0x00}   // Master card: 71:0F:8A:E6
+    {MASTER_CARD_SIZE, MASTER_CARD_BYTE_0, MASTER_CARD_BYTE_1, MASTER_CARD_BYTE_2, MASTER_CARD_BYTE_3, 0x00, 0x00, 0x00}
 };
 
 // ============================================
@@ -78,13 +92,23 @@ const byte MASTER_CARDS[MAX_MASTER_CARDS][8] = {
 // 📡 WIFI CONFIGURATION
 // ============================================
 
-#define WIFI_SSID           "IOT"
-#define WIFI_PASSWORD       "Ayamgeprek"          // Kosongkan jika open network
+#ifndef WIFI_SSID
+#define WIFI_SSID           "CHANGE_ME_WIFI_SSID"
+#endif
+#ifndef WIFI_PASSWORD
+#define WIFI_PASSWORD       "CHANGE_ME_WIFI_PASSWORD"
+#endif
 
 // Static IP Configuration (sesuai wiring.md)
+#ifndef STATIC_IP_ADDR
 #define STATIC_IP_ADDR      IPAddress(10, 10, 1, 5)
+#endif
+#ifndef GATEWAY_ADDR
 #define GATEWAY_ADDR        IPAddress(10, 10, 1, 1)
+#endif
+#ifndef SUBNET_MASK
 #define SUBNET_MASK         IPAddress(255, 255, 255, 0)
+#endif
 
 #define WIFI_CONNECT_TIMEOUT 10000      // 10 seconds WiFi connection timeout
 #define WIFI_RECONNECT_INTERVAL 10000   // 10 seconds between reconnect attempts
@@ -104,9 +128,15 @@ const byte MASTER_CARDS[MAX_MASTER_CARDS][8] = {
 //  OTA CONFIGURATION
 // ============================================
 
-#define OTA_PASSWORD        "Ayamgeprek"
-#define OTA_WEB_USERNAME    "hame"         // Username for web OTA page
-#define OTA_WEB_PASSWORD    "Ayamgeprek"         // Password for web OTA page
+#ifndef OTA_PASSWORD
+#define OTA_PASSWORD        "CHANGE_ME_OTA_PASSWORD"
+#endif
+#ifndef OTA_WEB_USERNAME
+#define OTA_WEB_USERNAME    "admin"
+#endif
+#ifndef OTA_WEB_PASSWORD
+#define OTA_WEB_PASSWORD    "CHANGE_ME_OTA_WEB_PASSWORD"
+#endif
 
 // ============================================
 // 📡 MQTT CONFIGURATION
@@ -114,11 +144,19 @@ const byte MASTER_CARDS[MAX_MASTER_CARDS][8] = {
 
 // EMQX Cloud settings — UPDATE THESE with your EMQX Cloud deployment details
 // Get connection address from: https://cloud-intl.emqx.com/ → Deployment → Overview
-#define MQTT_SERVER         "f99a6d01.ala.asia-southeast1.emqxsl.com"  // EMQX Cloud connection address
+#ifndef MQTT_SERVER
+#define MQTT_SERVER         "mqtt.example.com"
+#endif
 #define MQTT_PORT           8883                 // EMQX Cloud always uses 8883 (MQTTS/TLS)
-#define MQTT_USERNAME       "smartdoor-esp32"    // EMQX Cloud credential username
-#define MQTT_PASSWORD       "Ayamgeprek171717"   // EMQX Cloud credential password
-#define MQTT_CLIENT_ID      "smartdoor-esp32"    // Unique client ID
+#ifndef MQTT_USERNAME
+#define MQTT_USERNAME       "CHANGE_ME_MQTT_USERNAME"
+#endif
+#ifndef MQTT_PASSWORD
+#define MQTT_PASSWORD       "CHANGE_ME_MQTT_PASSWORD"
+#endif
+#ifndef MQTT_CLIENT_ID
+#define MQTT_CLIENT_ID      "smartdoor-esp32"
+#endif
 #define MQTT_USE_TLS        1                    // MUST be 1 for EMQX Cloud (TLS required)
 #define MQTT_BUFFER_SIZE    16384                // 16KB buffer for OTA chunks
 // Note: MQTT_KEEPALIVE is defined by PubSubClient.h (default 15s)
@@ -126,7 +164,9 @@ const byte MASTER_CARDS[MAX_MASTER_CARDS][8] = {
 #define MQTT_KEEPALIVE_SEC  60                   // Keep-alive interval (seconds)
 
 // Legacy API key (used by web server for authentication)
-#define API_KEY             "Ayamgeprek102938"   // Shared secret for web ↔ ESP32 validation
+#ifndef API_KEY
+#define API_KEY             "CHANGE_ME_API_KEY"
+#endif
 #define API_KEY_HEADER      "X-API-Key"          // Header name for API key
 
 // ============================================

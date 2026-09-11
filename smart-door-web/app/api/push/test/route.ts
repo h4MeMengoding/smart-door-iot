@@ -1,11 +1,14 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { sendPushToAll } from '@/lib/webpush';
 import { prisma } from '@/lib/prisma';
+import { requireApiAccess } from '@/lib/apiAuth';
 
 export const dynamic = 'force-dynamic';
 
 // POST /api/push/test — send test push notification to all subscribers
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const count = await prisma.pushSubscription.count();
     
@@ -40,7 +43,9 @@ export async function POST() {
 }
 
 // GET /api/push/test — show push subscription count for debugging
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const subscriptions = await prisma.pushSubscription.findMany({
       select: { id: true, endpoint: true, userAgent: true, createdAt: true },

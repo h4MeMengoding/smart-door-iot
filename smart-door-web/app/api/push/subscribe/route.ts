@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { VAPID_PUBLIC_KEY } from '@/lib/webpush';
+import { requireApiAccess } from '@/lib/apiAuth';
 
 export const dynamic = 'force-dynamic';
 
 // POST /api/push/subscribe — register a push subscription
 export async function POST(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
     const { subscription, userAgent } = body;
@@ -45,6 +48,8 @@ export async function POST(request: NextRequest) {
 
 // DELETE /api/push/subscribe — unsubscribe
 export async function DELETE(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
     const { endpoint } = body;

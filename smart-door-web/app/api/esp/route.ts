@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendCommand, getCachedStatus, getCachedSystemInfo, isDeviceOnline, initMqtt } from '@/lib/mqtt';
 import { TOPICS } from '@/lib/mqttTopics';
+import { requireApiAccess } from '@/lib/apiAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,6 +72,8 @@ const COMMAND_MAP: Record<string, { topic: string; action: string }> = {
 };
 
 export async function GET(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   initMqtt();
   
   const { searchParams } = new URL(request.url);
@@ -141,6 +144,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   initMqtt();
   
   try {

@@ -9,7 +9,7 @@ Dashboard web mencoba connect ke ESP32 tapi mendapat error 401 karena API key be
 File [lib/config.ts](smart-door-web/lib/config.ts) sudah diupdate untuk otomatis set default API key jika belum ada di localStorage:
 
 ```typescript
-export const DEFAULT_API_KEY = process.env.NEXT_PUBLIC_DEFAULT_API_KEY || 'Ayamgeprek102938';
+export const DEFAULT_API_KEY = process.env.NEXT_PUBLIC_DEFAULT_API_KEY || '';
 
 export function getApiKey(): string {
   if (typeof window === 'undefined') return DEFAULT_API_KEY;
@@ -29,7 +29,7 @@ export function getApiKey(): string {
 ### 2. Environment Variable
 File `.env.local` sudah ditambahkan:
 ```env
-NEXT_PUBLIC_DEFAULT_API_KEY=Ayamgeprek102938
+NEXT_PUBLIC_DEFAULT_API_KEY=<set-in-local-env-only>
 ```
 
 ### 3. Test Connection Feature
@@ -49,13 +49,13 @@ Refresh browser, API key akan otomatis di-set.
 ### Option 2: Manual Set API Key di Browser Console
 Buka browser console (F12) dan jalankan:
 ```javascript
-localStorage.setItem('esp32_api_key', 'Ayamgeprek102938');
+localStorage.setItem('esp32_api_key', '<your-api-key>');
 location.reload();
 ```
 
 ### Option 3: Via Settings Page
 1. Buka `http://localhost:3000/settings`
-2. Input API key: `Ayamgeprek102938`
+2. Input your API key from the private deployment secret store
 3. Klik "Save"
 4. Test connection dengan tombol "Test Connection"
 
@@ -86,7 +86,7 @@ Beri tahu jika Anda ingin saya buatkan mock mode untuk testing tanpa hardware ES
 
 1. Restart Next.js dev server
 2. Refresh browser
-3. API key akan auto-set ke `Ayamgeprek102938`
+3. API key akan auto-set dari environment lokal
 4. Dashboard akan connect ke ESP32 di `10.10.1.5`
 
 Jika ESP32 tidak menyala, akan tetap error tapi bukan 401 lagi.

@@ -11,7 +11,7 @@ Door unlock **langsung ke ESP32**, bukan melalui Next.js backend:
 | Property       | Value                                        |
 | -------------- | -------------------------------------------- |
 | **URL**        | `POST https://esp.ilhame.id/api/door/unlock` |
-| **Header**     | `X-API-Key: Ayamgeprek102938`                |
+| **Header**     | `X-API-Key: <your-api-key>`                  |
 | **Body**       | Tidak perlu                                  |
 | **Response**   | `{"success": true, "message": "..."}`        |
 
@@ -20,7 +20,7 @@ Untuk **mengunci** pintu:
 | Property       | Value                                      |
 | -------------- | ------------------------------------------ |
 | **URL**        | `POST https://esp.ilhame.id/api/door/lock` |
-| **Header**     | `X-API-Key: Ayamgeprek102938`              |
+| **Header**     | `X-API-Key: <your-api-key>`                |
 
 ---
 
@@ -55,7 +55,7 @@ Untuk **mengunci** pintu:
 1. Di bagian **Headers**, tap **Add new header**
 2. Isi:
    - **Key:** `X-API-Key`
-   - **Value:** `Ayamgeprek102938`
+   - **Value:** `<your-api-key>`
 
 ### Step 6 — (Opsional) Tambahkan Notifikasi Respon
 
@@ -165,7 +165,7 @@ Untuk mencegah tidak sengaja membuka pintu, buat shortcut dengan dialog konfirma
 2. **Add Action:** Cari **"Get Contents of URL"**
    - URL: `https://esp.ilhame.id/api/door/unlock`
    - Method: `POST`
-   - Header: `X-API-Key` = `Ayamgeprek102938`
+   - Header: `X-API-Key` = `<your-api-key>`
 
 3. **Add Action:** Cari **"Show Notification"**
    - Text: `🔓 Pintu dibuka!`
@@ -183,7 +183,7 @@ Satu shortcut untuk toggle status pintu:
 1. **Add Action:** "Get Contents of URL"
    - URL: `https://esp.ilhame.id/api/status`
    - Method: `GET`
-   - Header: `X-API-Key` = `Ayamgeprek102938`
+   - Header: `X-API-Key` = `<your-api-key>`
 
 2. **Add Action:** "Get Dictionary Value"
    - Get value for key: `doorLocked`
@@ -193,12 +193,12 @@ Satu shortcut untuk toggle status pintu:
 
 4. Di dalam **If:**
    - "Get Contents of URL" → `POST https://esp.ilhame.id/api/door/unlock`
-   - Header: `X-API-Key` = `Ayamgeprek102938`
+   - Header: `X-API-Key` = `<your-api-key>`
    - "Show Notification" → `🔓 Pintu dibuka!`
 
 5. Di dalam **Otherwise:**
    - "Get Contents of URL" → `POST https://esp.ilhame.id/api/door/lock`
-   - Header: `X-API-Key` = `Ayamgeprek102938`
+   - Header: `X-API-Key` = `<your-api-key>`
    - "Show Notification" → `🔒 Pintu dikunci!`
 
 6. **End If**
@@ -244,7 +244,7 @@ Atau tambahkan sebagai **complication** di watch face untuk akses 1-tap.
 | Masalah                          | Solusi                                                                     |
 | -------------------------------- | -------------------------------------------------------------------------- |
 | Error "Could not connect"        | Pastikan ESP32 online dan URL benar                                        |
-| Response error / 401             | Cek API Key sudah benar (`X-API-Key: Ayamgeprek102938`)                    |
+| Response error / 401             | Cek API Key deployment Anda (`X-API-Key: <your-api-key>`)                   |
 | Shortcut tidak muncul di Siri    | Pastikan nama shortcut unik dan tidak ada karakter khusus                  |
 | Tidak bisa dari luar rumah       | Pastikan ESP32 bisa diakses dari internet (via domain `esp.ilhame.id`)     |
 | Timeout / lambat                 | Cek koneksi WiFi ESP32 dan koneksi internet iPhone                         |
@@ -274,14 +274,14 @@ Sebelum membuat shortcut, test dulu API-nya:
 ```bash
 # Buka pintu
 curl -X POST https://esp.ilhame.id/api/door/unlock \
-  -H "X-API-Key: Ayamgeprek102938"
+  -H "X-API-Key: <your-api-key>"
 
 # Kunci pintu
 curl -X POST https://esp.ilhame.id/api/door/lock \
-  -H "X-API-Key: Ayamgeprek102938"
+  -H "X-API-Key: <your-api-key>"
 
 # Cek status
-curl -H "X-API-Key: Ayamgeprek102938" \
+curl -H "X-API-Key: <your-api-key>" \
   https://esp.ilhame.id/api/status
 ```
 

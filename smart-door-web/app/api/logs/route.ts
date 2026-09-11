@@ -3,11 +3,14 @@ import { addAccessLog, getCardByUid, addSystemEvent } from '@/lib/db';
 import { prisma } from '@/lib/prisma';
 import { logEvents } from '@/lib/events';
 import { sendPushToAll } from '@/lib/webpush';
+import { requireApiAccess } from '@/lib/apiAuth';
 
 export const dynamic = 'force-dynamic';
 
 // POST /api/logs - Add new access log (no auth — Cloudflare Access protects the domain)
 export async function POST(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const body = await request.json();
     const { cardUid, action, success, accessType: clientAccessType } = body;
@@ -114,6 +117,8 @@ export async function POST(request: NextRequest) {
 
 // GET /api/logs - Get access logs (supports ?since=ISO for incremental polling, ?limit=N&offset=N for paging)
 export async function GET(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   try {
     const since = request.nextUrl.searchParams.get('since');
     const limitParam = request.nextUrl.searchParams.get('limit');

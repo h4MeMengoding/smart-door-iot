@@ -44,15 +44,16 @@ export function SystemInfoCard({ uptimeRaw, isConnected = false, sysInfo = null 
   const [uptimeSeconds, setUptimeSeconds] = useState(0);
   const [dbConnected, setDbConnected] = useState<boolean | null>(null);
   const baseUptimeRef = useRef(0);
-  const baseTimestampRef = useRef(Date.now());
+  const baseTimestampRef = useRef(0);
 
   // When we get a new uptime from ESP32, reset the base
   useEffect(() => {
+    if (!baseTimestampRef.current) baseTimestampRef.current = Date.now();
     const parsed = parseUptimeSeconds(uptimeRaw);
     if (parsed > 0) {
       baseUptimeRef.current = parsed;
       baseTimestampRef.current = Date.now();
-      setUptimeSeconds(parsed);
+      setTimeout(() => setUptimeSeconds(parsed), 0);
     }
   }, [uptimeRaw]);
 
@@ -77,9 +78,12 @@ export function SystemInfoCard({ uptimeRaw, isConnected = false, sysInfo = null 
   }, []);
 
   useEffect(() => {
-    checkDbHealth();
+    const initialCheck = setTimeout(() => { void checkDbHealth(); }, 0);
     const id = setInterval(checkDbHealth, 60000);
-    return () => clearInterval(id);
+    return () => {
+      clearTimeout(initialCheck);
+      clearInterval(id);
+    };
   }, [checkDbHealth]);
 
   const signal = getSignalInfo(sysInfo?.rssi);

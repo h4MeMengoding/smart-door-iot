@@ -45,7 +45,7 @@ cd /Users/hame/Documents/smart-door-lock
 2. Tap kartu yang akan dijadikan master
 3. Lihat UID di Serial Monitor
 4. Copy UID tersebut
-5. Edit `include/config.h`:
+5. Copy `include/config.local.h.example` to `include/config.local.h` and edit the ignored local file:
 
 ```cpp
 const byte MASTER_CARDS[MAX_MASTER_CARDS][8] = {
@@ -58,7 +58,7 @@ Format: `{ukuran_UID, byte1, byte2, byte3, byte4, 0x00, 0x00, 0x00}`
 
 ### 3. Configure WiFi (Optional)
 
-Edit `include/config.h`:
+Edit the ignored `include/config.local.h` (never commit it):
 
 ```cpp
 #define WIFI_SSID           "IOT"          // Ganti dengan SSID Anda
@@ -206,7 +206,7 @@ Dashboard auto-refresh setiap 1 detik.
 [WiFi] Connection timeout - continuing offline
 ```
 **Solusi:**
-- ✅ Cek SSID dan password di `config.h`
+- ✅ Cek SSID dan password di `config.local.h`
 - ✅ Pastikan WiFi 2.4GHz (ESP32 tidak support 5GHz)
 - ✅ Cek jangkauan WiFi
 - ✅ System tetap jalan offline jika WiFi gagal
@@ -223,7 +223,7 @@ Dashboard auto-refresh setiap 1 detik.
 
 ## ⚙️ Konfigurasi Lanjutan
 
-Edit `include/config.h` untuk custom settings:
+Edit `include/config.local.h` untuk custom credentials:
 
 ```cpp
 // Timing
@@ -245,7 +245,8 @@ smart-door-lock/
 ├── src/
 │   └── main.cpp              # Main program (1100+ lines)
 ├── include/
-│   ├── config.h              # Configuration (pins, WiFi, patterns)
+│   ├── config.h              # Safe defaults and pin configuration
+│   ├── config.local.h        # Local credentials (ignored)
 │   └── README                
 ├── lib/                      # Empty (libraries via platformio.ini)
 ├── test/                     # Empty

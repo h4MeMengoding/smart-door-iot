@@ -38,8 +38,11 @@ export function LastAccessCard({ status }: LastAccessCardProps) {
   // Fetch on mount — use AbortController so StrictMode double-invoke cleans up safely
   useEffect(() => {
     const controller = new AbortController();
-    fetchLastLog(controller.signal);
-    return () => controller.abort();
+    const timer = setTimeout(() => { void fetchLastLog(controller.signal); }, 0);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [fetchLastLog]);
 
   // Refetch when new logs are added or door status changes

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireApiAccess } from '@/lib/apiAuth';
 import { prisma } from '@/lib/prisma';
 import { isMasterCardUid } from '@/lib/utils';
 import { addSystemEvent } from '@/lib/db';
@@ -13,6 +14,8 @@ export const dynamic = 'force-dynamic';
  * Body: { cards: string[] } - Array of card UIDs currently on ESP32
  */
 export async function POST(request: NextRequest) {
+  const denied = await requireApiAccess(request);
+  if (denied) return denied;
   // Parse body once upfront so it's available for retry
   let parsedBody: { cards?: string[] };
   try {

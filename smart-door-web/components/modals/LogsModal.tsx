@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { FileText, Trash2, XCircle, Loader2, X, Fingerprint, Globe, CreditCard, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -79,7 +78,7 @@ export function LogsModal({ isOpen, onClose }: LogsModalProps) {
     }
   };
 
-  const getActionBadge = (action: string, success: boolean) => {
+  const getActionBadge = (action: string) => {
     if (action === 'registered') {
       return (
         <span
@@ -235,7 +234,7 @@ export function LogsModal({ isOpen, onClose }: LogsModalProps) {
                               ? 'Touch'
                               : log.cardNickname || formatUid(log.cardUid || '')}
                         </span>
-                        {getActionBadge(log.action, log.success)}
+                        {getActionBadge(log.action)}
                       </div>
                       <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
                         {formatTimestamp(log.timestamp)}

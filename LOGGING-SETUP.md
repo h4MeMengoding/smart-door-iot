@@ -68,7 +68,7 @@ Atau manual dengan curl:
 ```bash
 curl -X POST http://localhost:3000/api/logs \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: Ayamgeprek102938" \
+  -H "X-API-Key: <your-api-key>" \
   -d '{
     "cardUid": "BE:02:28:DB",
     "action": "unlock",
@@ -91,7 +91,7 @@ Logs akan auto-refresh setiap 5 detik.
    #define WEB_SERVER_ENABLED  true
    #define WEB_SERVER_IP       "10.10.1.100"  // IP komputer Anda
    #define WEB_SERVER_PORT     3000
-   #define WEB_API_KEY         "Ayamgeprek102938"
+   #define WEB_API_KEY         "<your-api-key>"
    ```
 
 3. Implementasi kode dari `ESP32-WEB-LOGGING.md`
@@ -185,7 +185,7 @@ Hanya perlu ganti isi `serverStorage.ts` tanpa mengubah API routes.
 ## 📝 API Key di .env.local
 
 ```env
-ESP32_API_KEY=Ayamgeprek102938
+ESP32_API_KEY=<set-in-private-env>
 NEXT_PUBLIC_ESP32_IP=10.10.1.5
 NEXT_PUBLIC_ESP32_PORT=80
 NEXT_PUBLIC_WS_PORT=81

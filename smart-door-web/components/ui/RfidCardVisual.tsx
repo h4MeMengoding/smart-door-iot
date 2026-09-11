@@ -1,7 +1,6 @@
 'use client';
 
 import { Card as CardType } from '@/lib/types';
-import { formatUid } from '@/lib/utils';
 
 interface RfidCardVisualProps {
   card: CardType;

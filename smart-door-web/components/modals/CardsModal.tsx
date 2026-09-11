@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { CreditCard, Trash2, Pen, Plus, X, Check, WifiOff, RefreshCw } from 'lucide-react';
 import { Card as CardType } from '@/lib/types';
-import { formatUid } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { dashboardEvents } from '@/lib/dashboardEvents';
 import { logSystemEvent } from '@/lib/systemEvents';

@@ -9,8 +9,8 @@ Fitur OTA memungkinkan Anda untuk mengupdate firmware ESP32 tanpa kabel USB, mel
 ## 📋 Informasi OTA
 
 - **Hostname**: `smart-door-lock`
-- **IP Address**: `10.10.1.5` (sesuai static IP di config.h)
-- **Password**: `admin` (dapat diubah di config.h - OTA_PASSWORD)
+- **IP Address**: configure in local `config.local.h`
+- **Password**: configure in local `config.local.h` (`OTA_PASSWORD`)
 - **Port**: `3232` (default ArduinoOTA)
 
 ---
@@ -119,7 +119,7 @@ Dashboard menampilkan:
 
 ### Upload gagal - Auth Failed:
 1. Pastikan password benar: `admin`
-2. Cek OTA_PASSWORD di config.h
+2. Cek OTA_PASSWORD di config.local.h
 3. Re-upload via USB jika password berbeda
 
 ### ESP32 restart setelah OTA:
@@ -130,7 +130,7 @@ Dashboard menampilkan:
 
 ## 🛠️ Mengubah Password OTA
 
-1. Edit file `include/config.h`:
+1. Edit file `include/config.local.h`:
 ```cpp
 #define OTA_PASSWORD        "passwordbaru"
 ```
@@ -201,7 +201,7 @@ SYSTEM READY
 
 Jika ada masalah dengan OTA:
 1. Cek Serial Monitor untuk error messages
-2. Pastikan WiFi credentials benar di config.h
+2. Pastikan WiFi credentials benar di config.local.h
 3. Test koneksi WiFi: ping IP ESP32
 4. Factory reset: upload via USB
 
