@@ -17,6 +17,28 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# NEXT_PUBLIC_* values are embedded into the browser bundle during `next build`.
+# Declare them here so production Docker builds use the same browser configuration
+# as local development instead of relying on runtime container environment values.
+ARG NEXT_PUBLIC_DEFAULT_API_KEY
+ARG NEXT_PUBLIC_ESP32_IP
+ARG NEXT_PUBLIC_ESP32_PORT
+ARG NEXT_PUBLIC_ESP32_URL
+ARG NEXT_PUBLIC_MQTT_WS_PASSWORD
+ARG NEXT_PUBLIC_MQTT_WS_URL
+ARG NEXT_PUBLIC_MQTT_WS_USERNAME
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
+ARG NEXT_PUBLIC_WS_PORT
+ENV NEXT_PUBLIC_DEFAULT_API_KEY=$NEXT_PUBLIC_DEFAULT_API_KEY \
+    NEXT_PUBLIC_ESP32_IP=$NEXT_PUBLIC_ESP32_IP \
+    NEXT_PUBLIC_ESP32_PORT=$NEXT_PUBLIC_ESP32_PORT \
+    NEXT_PUBLIC_ESP32_URL=$NEXT_PUBLIC_ESP32_URL \
+    NEXT_PUBLIC_MQTT_WS_PASSWORD=$NEXT_PUBLIC_MQTT_WS_PASSWORD \
+    NEXT_PUBLIC_MQTT_WS_URL=$NEXT_PUBLIC_MQTT_WS_URL \
+    NEXT_PUBLIC_MQTT_WS_USERNAME=$NEXT_PUBLIC_MQTT_WS_USERNAME \
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY \
+    NEXT_PUBLIC_WS_PORT=$NEXT_PUBLIC_WS_PORT
+
 # Next.js collects completely anonymous telemetry data about general usage.
 # Learn more here: https://nextjs.org/telemetry
 # Uncomment the following line in case you want to disable telemetry during the build.
