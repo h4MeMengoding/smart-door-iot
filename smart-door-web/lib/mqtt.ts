@@ -12,11 +12,16 @@ import { MQTT_CONFIG } from './config';
 // ── Configuration ──
 
 export function getMqttConfig() {
+  const clientId = process.env.MQTT_CLIENT_ID?.trim()
+    || `smartdoor-web-${process.env.NODE_ENV || 'dev'}`;
+
   return {
     brokerUrl: MQTT_CONFIG.brokerUrl,
     username: MQTT_CONFIG.username,
     password: MQTT_CONFIG.password,
-    clientId: `smartdoor-web-${process.env.NODE_ENV || 'dev'}`,
+    // Each deployed dashboard must use a distinct ID. MQTT brokers disconnect
+    // the existing connection when a second client connects with the same ID.
+    clientId,
   };
 }
 
