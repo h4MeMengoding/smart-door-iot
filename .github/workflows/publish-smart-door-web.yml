@@ -35,7 +35,7 @@ jobs:
       NEXT_PUBLIC_MQTT_WS_PASSWORD: ${{ secrets.NEXT_PUBLIC_MQTT_WS_PASSWORD }}
       NEXT_PUBLIC_MQTT_WS_URL: ${{ vars.NEXT_PUBLIC_MQTT_WS_URL }}
       NEXT_PUBLIC_MQTT_WS_USERNAME: ${{ vars.NEXT_PUBLIC_MQTT_WS_USERNAME }}
-      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${{ vars.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
       NEXT_PUBLIC_WS_PORT: ${{ vars.NEXT_PUBLIC_WS_PORT }}
     steps:
       - name: Check out source
@@ -97,12 +97,12 @@ jobs:
             NEXT_PUBLIC_MQTT_WS_PASSWORD=${{ secrets.NEXT_PUBLIC_MQTT_WS_PASSWORD }}
             NEXT_PUBLIC_MQTT_WS_URL=${{ vars.NEXT_PUBLIC_MQTT_WS_URL }}
             NEXT_PUBLIC_MQTT_WS_USERNAME=${{ vars.NEXT_PUBLIC_MQTT_WS_USERNAME }}
-            NEXT_PUBLIC_VAPID_PUBLIC_KEY=${{ vars.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
+            NEXT_PUBLIC_VAPID_PUBLIC_KEY=${{ secrets.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
             NEXT_PUBLIC_WS_PORT=${{ vars.NEXT_PUBLIC_WS_PORT }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-    deploy:
+  deploy:
     name: Deploy to Dokploy
     needs: publish
     if: github.ref == 'refs/heads/main'
