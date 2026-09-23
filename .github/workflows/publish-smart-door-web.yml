@@ -1,0 +1,121 @@
+name: Publish Smart Door Web
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "smart-door-web/**"
+      - ".github/workflows/publish-smart-door-web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/h4memengoding/smart-door-web
+
+concurrency:
+  group: smart-door-web-${{ github.ref == 'refs/heads/main' && 'production' || github.run_id }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
+
+jobs:
+  validate:
+    name: Lint and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: smart-door-web
+    env:
+      NEXT_PUBLIC_DEFAULT_API_KEY: ${{ secrets.NEXT_PUBLIC_DEFAULT_API_KEY }}
+      NEXT_PUBLIC_ESP32_IP: ${{ vars.NEXT_PUBLIC_ESP32_IP }}
+      NEXT_PUBLIC_ESP32_PORT: ${{ vars.NEXT_PUBLIC_ESP32_PORT }}
+      NEXT_PUBLIC_ESP32_URL: ${{ vars.NEXT_PUBLIC_ESP32_URL }}
+      NEXT_PUBLIC_MQTT_WS_PASSWORD: ${{ secrets.NEXT_PUBLIC_MQTT_WS_PASSWORD }}
+      NEXT_PUBLIC_MQTT_WS_URL: ${{ vars.NEXT_PUBLIC_MQTT_WS_URL }}
+      NEXT_PUBLIC_MQTT_WS_USERNAME: ${{ vars.NEXT_PUBLIC_MQTT_WS_USERNAME }}
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${{ vars.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
+      NEXT_PUBLIC_WS_PORT: ${{ vars.NEXT_PUBLIC_WS_PORT }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: smart-door-web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Build Next.js application
+        run: npm run build
+
+  publish:
+    name: Publish image
+    needs: validate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: smart-door-web
+          file: smart-door-web/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:main
+            ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=smart-door-web
+          build-args: |
+            NEXT_PUBLIC_DEFAULT_API_KEY=${{ secrets.NEXT_PUBLIC_DEFAULT_API_KEY }}
+            NEXT_PUBLIC_ESP32_IP=${{ vars.NEXT_PUBLIC_ESP32_IP }}
+            NEXT_PUBLIC_ESP32_PORT=${{ vars.NEXT_PUBLIC_ESP32_PORT }}
+            NEXT_PUBLIC_ESP32_URL=${{ vars.NEXT_PUBLIC_ESP32_URL }}
+            NEXT_PUBLIC_MQTT_WS_PASSWORD=${{ secrets.NEXT_PUBLIC_MQTT_WS_PASSWORD }}
+            NEXT_PUBLIC_MQTT_WS_URL=${{ vars.NEXT_PUBLIC_MQTT_WS_URL }}
+            NEXT_PUBLIC_MQTT_WS_USERNAME=${{ vars.NEXT_PUBLIC_MQTT_WS_USERNAME }}
+            NEXT_PUBLIC_VAPID_PUBLIC_KEY=${{ vars.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
+            NEXT_PUBLIC_WS_PORT=${{ vars.NEXT_PUBLIC_WS_PORT }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Dokploy
+    needs: publish
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+      DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+      DOKPLOY_APPLICATION_ID: ${{ secrets.DOKPLOY_APPLICATION_ID }}
+    steps:
+      - name: Trigger Dokploy deployment
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST "${DOKPLOY_URL%/}/api/application.deploy" \
+            --header "x-api-key: ${DOKPLOY_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "{\"applicationId\":\"${DOKPLOY_APPLICATION_ID}\"}"
