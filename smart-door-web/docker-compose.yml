@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   web:
     build:
@@ -16,17 +14,16 @@ services:
         NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
         NEXT_PUBLIC_WS_PORT: ${NEXT_PUBLIC_WS_PORT}
     container_name: smart-door-web
-    restart: always
+    restart: unless-stopped
     ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      # DB URL bisa menggunakan Neon Serverless atau Postgres lokal
-      - DATABASE_URL=${DATABASE_URL}
-      - NEXT_PUBLIC_ESP32_URL=${NEXT_PUBLIC_ESP32_URL}
-      - ESP32_API_KEY=${ESP32_API_KEY}
-      - DASHBOARD_PIN=${DASHBOARD_PIN}
-      - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
-      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+      - "3100:3000"
     env_file:
       - .env
+    environment:
+      NODE_ENV: production
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/api/health/db || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
