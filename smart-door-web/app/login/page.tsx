@@ -236,7 +236,7 @@ function LoginContent() {
       });
     };
     fetchStats();
-    const interval = setInterval(fetchStats, 5000);
+    const interval = setInterval(fetchStats, 15000);
     return () => { aborted = true; clearInterval(interval); };
   }, []);
 
@@ -354,7 +354,7 @@ function LoginContent() {
 
   return (
     <div
-      className="h-[100dvh] flex flex-col items-center justify-center px-5 relative overflow-hidden"
+      className="min-h-[100dvh] flex items-center justify-center px-4 py-8 sm:px-6 relative overflow-hidden"
     >
       {/* Background accents */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
@@ -372,17 +372,21 @@ function LoginContent() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5 }}
-        className="w-full max-w-[360px] relative z-10 flex flex-col gap-4"
+        className="w-full max-w-[920px] relative z-10 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_380px] gap-4 md:gap-6 items-center"
       >
         {/* ── Clock + Date ── */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="text-center mb-2"
+          className="text-center md:text-left md:px-5 md:pt-3"
         >
+          <div className="inline-flex items-center gap-2 mb-4 text-[10px] font-semibold uppercase tracking-[0.22em]" style={{ color: 'var(--primary)' }}>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--primary)', boxShadow: '0 0 12px var(--primary)' }} />
+            Smart Door / Secure Access
+          </div>
           <motion.p
-            className="text-4xl font-bold font-mono tabular-nums tracking-tight"
+            className="text-5xl sm:text-6xl font-bold font-mono tabular-nums tracking-[-0.06em]"
             style={{ color: 'var(--text-primary)' }}
             key={time}
             initial={{ opacity: 0.7, y: -2 }}
@@ -391,8 +395,11 @@ function LoginContent() {
           >
             {time}
           </motion.p>
-          <p className="text-[13px] mt-1" style={{ color: 'var(--text-muted)' }}>
+          <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>
             {dateStr}
+          </p>
+          <p className="hidden md:block max-w-[360px] text-sm leading-relaxed mt-6" style={{ color: 'var(--text-secondary)' }}>
+            Monitor your entrance, manage access, and keep your home connected from one secure dashboard.
           </p>
         </motion.div>
 
@@ -401,9 +408,11 @@ function LoginContent() {
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          className="rounded-[28px] border p-1"
+          style={{ background: 'color-mix(in srgb, var(--bg-surface) 88%, transparent)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-lg)' }}
         >
           {/* Top section with icon */}
-          <div className="pt-6 pb-4 px-6 flex flex-col items-center">
+          <div className="pt-7 pb-5 px-6 flex flex-col items-center">
             {/* Animated icon */}
             <motion.div
               initial={{ scale: 0 }}
@@ -458,7 +467,7 @@ function LoginContent() {
                 transition={{ duration: 0.2 }}
                 className="text-center"
               >
-                <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
                   {success ? 'Welcome Back' : 'Enter PIN'}
                 </h1>
                 <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -469,7 +478,7 @@ function LoginContent() {
           </div>
 
           {/* PIN section */}
-          <div className="px-6 pb-5">
+          <div className="px-6 pb-6">
             {/* Progress dots */}
             <div className="flex justify-center gap-3 mb-5">
               {Array.from({ length: 6 }).map((_, i) => {
@@ -621,7 +630,12 @@ function LoginContent() {
         </motion.div>
 
         {/* ── System Stats ── */}
-        <SystemStats stats={stats} />
+        <div
+          className="rounded-[28px] border px-5 py-4 md:px-6 md:py-5"
+          style={{ background: 'color-mix(in srgb, var(--bg-surface) 72%, transparent)', borderColor: 'var(--border)' }}
+        >
+          <SystemStats stats={stats} />
+        </div>
 
       </motion.div>
     </div>
