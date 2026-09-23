@@ -58,3 +58,14 @@ Karena aplikasi berjalan terisolasi di dalam Docker, jika Anda ingin menjalankan
 ## Catatan
 - Karena `next.config.ts` sudah dikonfigurasikan dengan `output: "standalone"`, ukuran image Docker akan jauh lebih kecil dan optimal untuk produksi.
 - Secara default aplikasi mem-publish port `3100`. Jika Anda ingin mengubah port publish, edit `docker-compose.yml` pada bagian `ports: - "3100:3000"`.
+
+## CI/CD GitHub Actions ke Dokploy
+
+Workflow `.github/workflows/publish-smart-door-web.yml` memvalidasi aplikasi, lalu membangun dan mendorong image ke private GitHub Container Registry (GHCR). Dokploy cukup menarik image tersebut, sehingga server tidak menjalankan `npm ci` atau `next build`.
+
+1. Buat GitHub secrets: `DOKPLOY_URL`, `DOKPLOY_API_KEY`, `DOKPLOY_APPLICATION_ID`, `NEXT_PUBLIC_DEFAULT_API_KEY`, dan `NEXT_PUBLIC_MQTT_WS_PASSWORD`.
+2. Buat GitHub variables untuk `NEXT_PUBLIC_ESP32_IP`, `NEXT_PUBLIC_ESP32_PORT`, `NEXT_PUBLIC_ESP32_URL`, `NEXT_PUBLIC_MQTT_WS_URL`, `NEXT_PUBLIC_MQTT_WS_USERNAME`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, dan `NEXT_PUBLIC_WS_PORT`.
+3. Di Dokploy, buat aplikasi **Docker Registry** dengan image `ghcr.io/h4memengoding/smart-door-web:main`, internal port `3000`, dan healthcheck `/api/health/db`. Tambahkan registry credential berupa GitHub PAT read-only dengan izin `read:packages`.
+4. Masukkan seluruh environment server-only seperti `DATABASE_URL`, `AUTH_SECRET`, `ESP32_API_KEY`, MQTT server credentials, dan VAPID private key ke runtime environment Dokploy.
+
+Tag `main` dipakai untuk deployment otomatis; `sha-<commit>` tersedia sebagai tag spesifik commit untuk rollback. Untuk rollback yang benar-benar immutable, gunakan digest image dari GHCR. Nilai `NEXT_PUBLIC_*` ikut masuk bundle browser, jadi hanya gunakan kredensial low-privilege yang memang aman dipublikasikan.
