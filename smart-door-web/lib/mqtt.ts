@@ -53,10 +53,16 @@ export function onMqttEvent(listener: MqttEventListener): () => void {
 let cachedStatus: Record<string, unknown> | null = null;
 let cachedSystemInfo: Record<string, unknown> | null = null;
 let deviceOnline = false;
+let deviceAvailability: boolean | null = null;
 
 export function getCachedStatus() { return cachedStatus; }
 export function getCachedSystemInfo() { return cachedSystemInfo; }
 export function isDeviceOnline() { return deviceOnline; }
+
+/** Null until MQTT receives availability, or while the broker is disconnected. */
+export function getDeviceAvailability(): boolean | null {
+  return client?.connected ? deviceAvailability : null;
+}
 
 // ── Singleton client ──
 
@@ -152,6 +158,7 @@ function getClient(): mqtt.MqttClient {
       // Handle availability (plain text)
       if (topic === TOPICS.AVAILABILITY) {
         deviceOnline = message.toString() === 'online';
+        deviceAvailability = deviceOnline;
         console.log(`[MQTT] Device ${deviceOnline ? 'online' : 'offline'}`);
         return;
       }
@@ -211,6 +218,7 @@ function getClient(): mqtt.MqttClient {
   client.on('close', () => {
     connecting = false;
     deviceOnline = false;
+    deviceAvailability = null;
     subscribed = false;
   });
 
