@@ -1,6 +1,7 @@
 #include "WiFiManager.h"
 #include "GlobalState.h"
 #include "DoorController.h"
+#include "OfflineAccessPolicy.h"
 #include "BuzzerController.h"
 #include "config.h"
 #include <WiFi.h>
@@ -33,6 +34,8 @@ void setupWiFi() {
         wifiConnected = true;
         wifiWasConnected = true;
         DEBUG_PRINTF("[WiFi] EVENT: Got IP - %s\n", WiFi.localIP().toString().c_str());
+        configTzTime(NTP_TIMEZONE, NTP_SERVER_1, NTP_SERVER_2);
+        DEBUG_PRINTLN("[NTP] Time sync initiated in background");
         lastEvent = "WiFi reconnected";
     }, WiFiEvent_t::ARDUINO_EVENT_WIFI_STA_GOT_IP);
     
@@ -41,45 +44,10 @@ void setupWiFi() {
         DEBUG_PRINTLN("[WiFi] WARNING: Failed to configure static IP");
     }
     
+    // Connection is asynchronous: local RFID, touch, and relay access may run
+    // immediately even when no access point is available.
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    
-    unsigned long startAttempt = millis();
-    // Non-blocking WiFi connection dengan yield()
-    while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < WIFI_CONNECT_TIMEOUT) {
-        yield();  // Biarkan ESP32 handle background tasks
-        delay(100);  // Delay kecil, non-blocking
-        
-        // Print progress tiap 500ms
-        static unsigned long lastPrint = 0;
-        if (millis() - lastPrint > 500) {
-            DEBUG_PRINT(".");
-            lastPrint = millis();
-        }
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        wifiConnected = true;
-        wifiWasConnected = true;
-        DEBUG_PRINTLN("\n[WiFi] Connected!");
-        DEBUG_PRINTF("[WiFi] IP Address: %s\n", WiFi.localIP().toString().c_str());
-        
-        // Sync NTP time — use POSIX timezone (more reliable than gmtOffset)
-        configTzTime(NTP_TIMEZONE, NTP_SERVER_1, NTP_SERVER_2);
-        DEBUG_PRINTLN("[NTP] Time sync initiated (POSIX TZ: " NTP_TIMEZONE ")");
-        DEBUG_PRINTF("[NTP] Servers: %s, %s\n", NTP_SERVER_1, NTP_SERVER_2);
-        
-        // Wait for NTP sync (up to 5s)
-        struct tm timeInfo;
-        if (getLocalTime(&timeInfo, 5000)) {
-            ntpSynced = true;
-            DEBUG_PRINTF("[NTP] Time synced: %02d:%02d:%02d\n", timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec);
-        } else {
-            DEBUG_PRINTLN("[NTP] Initial sync pending (SNTP will retry in background)");
-        }
-    } else {
-        DEBUG_PRINTLN("\n[WiFi] Connection timeout - continuing offline");
-        wifiConnected = false;
-    }
+    DEBUG_PRINTLN("[WiFi] Connection started in background; local access is ready");
 }
 
 // OTA is now handled via MQTT — see OTAUpdate.cpp
@@ -115,20 +83,15 @@ void checkWiFi() {
     // WiFi is disconnected — attempt periodic reconnect
     wifiConnected = false;
     
-    if (now - lastWiFiReconnectAttempt >= WIFI_RECONNECT_INTERVAL) {
+    if (shouldAttemptWiFiReconnect(
+            WiFi.status() == WL_CONNECTED,
+            now,
+            lastWiFiReconnectAttempt,
+            WIFI_RECONNECT_INTERVAL)) {
         lastWiFiReconnectAttempt = now;
         
         DEBUG_PRINTLN("[WiFi] Connection lost, attempting reconnect...");
-        
-        // Re-apply static IP config with DNS before reconnecting
-        if (!WiFi.config(STATIC_IP_ADDR, GATEWAY_ADDR, SUBNET_MASK, GATEWAY_ADDR, IPAddress(8, 8, 8, 8))) {
-            DEBUG_PRINTLN("[WiFi] WARNING: Failed to reconfigure static IP");
-        }
-        
-        WiFi.disconnect(false);  // Disconnect without erasing config
-        delay(100);
-        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-        
-        DEBUG_PRINTLN("[WiFi] Reconnect initiated, waiting for event callback...");
+        WiFi.reconnect();
+        DEBUG_PRINTLN("[WiFi] Reconnect initiated in background");
     }
 }

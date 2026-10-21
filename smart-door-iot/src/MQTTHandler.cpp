@@ -1146,10 +1146,8 @@ void setupMQTT() {
     DEBUG_PRINTF("[MQTT] Buffer size: %d bytes\n", MQTT_BUFFER_SIZE);
     DEBUG_PRINTF("[MQTT] Keep-alive: %ds\n", MQTT_KEEPALIVE);
     
-    // Initial connection
-    if (wifiConnected) {
-        mqttConnect();
-    }
+    // mqttLoop() performs the initial connection after the local access loop
+    // has started. Do not block boot on a broker or internet connection.
 }
 
 // ============================================

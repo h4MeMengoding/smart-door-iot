@@ -32,6 +32,7 @@
 #include "OTAUpdate.h"
 #include "HttpOTA.h"
 #include "StateMachine.h"
+#include "OfflineAccessPolicy.h"
 
 // ============================================
 // SETUP
@@ -109,10 +110,9 @@ void setup() {
         currentState = STATE_ERROR;
     }
     
-    // Initialize WiFi + MQTT + HTTP OTA fallback
+    // Initialize WiFi and MQTT. HTTP OTA starts after WiFi obtains an IP.
     setupWiFi();
     setupMQTT();
-    setupHttpOTA();
     
     // System ready
     DEBUG_PRINTLN("\n========================================");
@@ -136,8 +136,14 @@ void setup() {
 // ============================================
 
 void loop() {
-    // Jika MQTT OTA sedang berlangsung, hanya handle MQTT
-    if (mqttOtaInProgress) {
+    static bool httpOtaInitialized = false;
+
+    // OTA is the only operation allowed to pause local access. A lost MQTT
+    // connection must not leave the lock in this state forever.
+    if (!canProcessLocalAccess(mqttOtaInProgress)) {
+        serviceMqttOta();
+    }
+    if (!canProcessLocalAccess(mqttOtaInProgress)) {
         if (wifiConnected) {
             mqttLoop();
         }
@@ -145,18 +151,7 @@ void loop() {
         return;
     }
     
-    // Check WiFi connection & handle reconnect
-    checkWiFi();
-    
-    // Handle MQTT communication
-    if (wifiConnected) {
-        handleMQTTTasks();
-    }
-    
-    // Handle HTTP OTA fallback server
-    handleHttpOTA();
-    
-    // Update non-blocking components
+    // Run all local access paths before servicing the network.
     updateBuzzer();
     updateRfidLed();
     if (currentState != STATE_UNLOCK) {
@@ -286,6 +281,18 @@ void loop() {
         case STATE_ERROR:
             // Stay in error state, manual reset required
             break;
+    }
+
+    // Network failures only affect remote functionality. These operations run
+    // after the RFID/touch/relay state machine and must remain asynchronous.
+    checkWiFi();
+    if (shouldStartHttpOtaServer(wifiConnected, httpOtaInitialized)) {
+        setupHttpOTA();
+        httpOtaInitialized = true;
+    }
+    if (wifiConnected) {
+        handleMQTTTasks();
+        handleHttpOTA();
     }
     
     // Delay kecil untuk prevent watchdog timeout + stabilkan loop

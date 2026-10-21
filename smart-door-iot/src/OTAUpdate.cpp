@@ -66,6 +66,15 @@ bool otaBegin(uint32_t totalSize, const String& md5) {
     return true;
 }
 
+void serviceMqttOta() {
+    if (!mqttOtaInProgress || millis() - otaStartTime <= OTA_TIMEOUT) {
+        return;
+    }
+
+    DEBUG_PRINTLN("[OTA-MQTT] Timeout without data; restoring local access");
+    otaAbort();
+}
+
 // ============================================
 // OTA WRITE CHUNK
 // ============================================
@@ -73,13 +82,8 @@ bool otaBegin(uint32_t totalSize, const String& md5) {
 void otaWriteChunk(uint8_t* data, size_t length) {
     if (!mqttOtaInProgress) return;
     
-    // Check timeout
-    if (millis() - otaStartTime > OTA_TIMEOUT) {
-        DEBUG_PRINTLN("[OTA-MQTT] Timeout! Aborting...");
-        otaAbort();
-        publishOtaProgress(0, "error: timeout");
-        return;
-    }
+    serviceMqttOta();
+    if (!mqttOtaInProgress) return;
     
     // Write chunk to flash
     size_t written = Update.write(data, length);

@@ -17,6 +17,9 @@ extern String otaExpectedMd5;
 // Returns true if Update.begin() succeeds
 bool otaBegin(uint32_t totalSize, const String& md5);
 
+// Abort an MQTT OTA that stops receiving data, even when Wi-Fi is unavailable.
+void serviceMqttOta();
+
 // Write a chunk of firmware data
 // Called from MQTT callback when data arrives on ota/data topic
 void otaWriteChunk(uint8_t* data, size_t length);

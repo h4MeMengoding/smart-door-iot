@@ -245,6 +245,10 @@ static void handleNotFound() {
 // ── Setup & Loop ──
 
 void setupHttpOTA() {
+    if (httpOtaStarted) {
+        return;
+    }
+
     // Collect Cookie header
     const char* headerKeys[] = {"Cookie"};
     otaServer.collectHeaders(headerKeys, 1);
